@@ -5,7 +5,7 @@ from sensor_msgs.msg import LaserScan
 import numpy as np
 from collections import deque
 from math import *
-from swarm_aggregation.msg import obs
+# from swarm_aggregation.msg import obs
 from tf.transformations import euler_from_quaternion
 from nav_msgs.msg import Odometry
 import matplotlib.pyplot as plt
@@ -58,7 +58,7 @@ class robot:
         self.cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=1)    
         self.pubg = rospy.Publisher('/goal', Point, queue_size=1)
         self.rad_pub = rospy.Publisher('/radius', Point, queue_size=1)
-        self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)      
+        # self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)      
         
         
     def update_Odom(self,odom):
@@ -114,16 +114,15 @@ class robot:
         # Gradient of Bearing
         self.dtheta = (self.bearing[k] - self.bearing[k-1])/h
 
-        for obs_element in self.obs:
-            x_diff = obs_element.x -self.x
-            y_diff = obs_element.y -self.y
+        # for obs_element in self.obs:
+        #     x_diff = obs_element.x -self.x
+        #     y_diff = obs_element.y -self.y
             
-            dist = sqrt(x_diff**2 + y_diff**2)
-            ang = atan2(y_diff, x_diff)
+        #     dist = sqrt(x_diff**2 + y_diff**2)
+        #     ang = atan2(y_diff, x_diff)
             
-            self.disij.append(dist)
-            self.delij.append(ang)  
-
+        #     self.disij.append(dist)
+        #     self.delij.append(ang)  
         if (self.dis_err) >= 0.850:
             """write code to control movement of robots based on conditions satisfied"""
             """No obstacle detected -> self.speed.linear.x = 0.18

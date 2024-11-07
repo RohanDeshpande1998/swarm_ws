@@ -1,4 +1,10 @@
 {
     "ros.distro": "noetic",
-    "cmake.sourceDirectory": "/home/rohan/swarm_ws/src/swarm_aggregation"
+    "cmake.sourceDirectory": "/home/rohan/swarm_ws/src/swarm_aggregation",
+    "python.autoComplete.extraPaths": [
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ],
+    "python.analysis.extraPaths": [
+        "/opt/ros/noetic/lib/python3/dist-packages"
+    ]
 }
