@@ -1,0 +1,8 @@
+prefix=/home/rohan/swarm_ws/install
+
+Name: swarm_aggregation
+Description: Description of swarm_aggregation
+Version: 0.0.0
+Cflags: 
+Libs: -L${prefix}/lib 
+Requires: 

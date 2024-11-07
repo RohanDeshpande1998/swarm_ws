@@ -1,0 +1,4 @@
+{
+    "ros.distro": "noetic",
+    "cmake.sourceDirectory": "/home/rohan/swarm_ws/src/swarm_aggregation"
+}
