@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import rospy 
+import statistics
 from geometry_msgs.msg import Point, Twist, Pose2D
 from sensor_msgs.msg import LaserScan
 import numpy as np
@@ -44,9 +45,9 @@ class robot:
         self.bearing = [0]
         self.neigh = 0
         self.robot = []
-        self.safe_zone = [0,0,0]
+        self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
         self.initial_no = -1                      
-        self.goal = Point(np.random.uniform(-6,6), np.random.uniform(-6,6), 0.0)
+        self.goal = Point(2.0, 2.5, 0.0) #Giving fixed goal for now
         self.odom = Odometry()
         self.namespace = rospy.get_namespace()
         self.speed = Twist()
@@ -73,9 +74,68 @@ class robot:
 
     def scanner(self,msg):       
         self.range = msg.ranges
+        min_distance = min(self.range)
         self.ang_max = msg.angle_max
-        self.ang_inc = msg.angle_increment    
+        self.ang_inc = msg.angle_increment
+        self.process_scanner_data(msg)
+        # rospy.loginfo(f"Minimum distance to object: {min_distance} meters")
     
+    def cluster_and_get_medians(self, temp_distances, epsilon):
+        distances = sorted(temp_distances)
+        clusters = []
+        current_cluster = []
+        
+        # Step 1: Form clusters based on the distance threshold
+        for angle, distance in enumerate(distances):
+            # Step 2: Form clusters based on the distance threshold
+            if not current_cluster:
+                current_cluster.append(distance)
+            else:
+                # Check if the current distance is close to the last distance in the cluster
+                prev_distance = current_cluster[-1]
+                if abs(distance - prev_distance) <= epsilon:
+                    current_cluster.append(distance)
+                else:
+                    # Save the completed cluster and start a new one
+                    clusters.append(current_cluster)
+                    current_cluster = []
+
+
+        # Add the last cluster if any
+        if current_cluster:
+            clusters.append(current_cluster)
+
+        # Step 3: Calculate and print the medians of each cluster
+        median_array = []
+        for cluster in clusters:
+            median_distance = statistics.median_low(cluster)
+            median_array.append(median_distance)
+        return median_array
+    
+    
+    def process_scanner_data(self,msg):
+            # Threshold limit to consider as an obstacle (in meters)
+        R_max = 10.0  # Adjust based on your needs
+        obstacles = []
+        distances = []
+        angles = []
+        # Iterate through laser scan ranges and print angles where distance < limit
+        for angle, distance in enumerate(msg.ranges):
+        # Check if distance is less than the limit
+            if distance < R_max:
+                distances.append(distance)
+                angles.append(angle)
+        rounded_distances = np.round(distances, 4)
+        obstacle_distances = self.cluster_and_get_medians(rounded_distances, 1)
+        indices = [i for i, val in enumerate(rounded_distances) if val in obstacle_distances]
+        for index in indices:
+            obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
+            obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
+            
+            obstacles.append((obstacle_x,obstacle_y))
+        print("Obstacles are at:", obstacles)
+
+
     def wall_following(self):
         """funct to follow wall boundary
         Turn Right by default or rotate on CCW fashion"""
@@ -125,12 +185,14 @@ class robot:
         #     self.delij.append(ang)  
         if (self.dis_err) >= 0.850:
             """write code to control movement of robots based on conditions satisfied"""
-            """No obstacle detected -> self.speed.linear.x = 0.18
-                self.speed.angular.z = K*np.sign(self.dtheta)
+            #No obstacle detected -> 
+            self.speed.linear.x = 0.18
+            self.speed.angular.z = K*np.sign(self.dtheta)
                 
-                Robot Near -> t = rospy.get_time()
-                        self.speed.linear.x = max((0.18 -(5000-t)*0.0001),0)                    
-                        self.speed.angular.z = K*np.sign(self.dtheta)- 0.866*np.sign(self.delij[i])"""
+            # #Robot Near -> 
+            # t = rospy.get_time()
+            # self.speed.linear.x = max((0.18 -(5000-t)*0.0001),0)                    
+            # self.speed.angular.z = K*np.sign(self.dtheta)- 0.866*np.sign(self.delij[i])
 
         self.cmd_vel.publish(self.speed)
         self.pubg.publish(self.goal)
@@ -141,7 +203,7 @@ if __name__ == '__main__':
     k = 0
     l = [] #l is time
     rate = rospy.Rate(4)
-    bot = robot(6)     
+    bot = robot(2)     
     rospy.sleep(6)
     # bot.set_goal()
     while not rospy.is_shutdown() and k < 500000:
