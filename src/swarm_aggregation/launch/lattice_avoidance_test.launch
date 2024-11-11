@@ -9,7 +9,7 @@
 
 
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
-    <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_two_lattice_structures.world"/> 
+    <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_two_lattice_structures_with_end_pillar.world"/> 
     <arg name="paused" value="true"/>
     <arg name="use_sim_time" value="true"/>
     <arg name="gui" value="true"/>

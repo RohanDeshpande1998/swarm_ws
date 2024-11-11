@@ -4,6 +4,7 @@ import statistics
 from geometry_msgs.msg import Point, Twist, Pose2D
 from sensor_msgs.msg import LaserScan
 import numpy as np
+from sklearn import cluster
 from collections import deque
 from math import *
 # from swarm_aggregation.msg import obs
@@ -47,7 +48,7 @@ class robot:
         self.robot = []
         self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
         self.initial_no = -1                      
-        self.goal = Point(2.0, 2.5, 0.0) #Giving fixed goal for now
+        self.goal = Point(2.0, 4, 0.0) #Giving fixed goal for now
         self.odom = Odometry()
         self.namespace = rospy.get_namespace()
         self.speed = Twist()
@@ -61,6 +62,7 @@ class robot:
         self.rad_pub = rospy.Publisher('/radius', Point, queue_size=1)
         # self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)      
         
+        self.obstacle_coordinates = []
         
     def update_Odom(self,odom):
         """ Odometry of current bot"""        
@@ -80,26 +82,31 @@ class robot:
         self.process_scanner_data(msg)
         # rospy.loginfo(f"Minimum distance to object: {min_distance} meters")
     
-    def cluster_and_get_medians(self, temp_distances, epsilon):
-        distances = sorted(temp_distances)
+    def distance(self, point1, point2):
+    # Convert numbers to single-element tuples
+        point1_tuple = (point1,) if not isinstance(point1, (tuple, list)) else point1
+        point2_tuple = (point2,) if not isinstance(point2, (tuple, list)) else point2
+        return dist(point1_tuple, point2_tuple)
+
+    def get_medians(self, data_points, epsilon):
+        sorted_data_points = sorted(data_points)
         clusters = []
         current_cluster = []
         
         # Step 1: Form clusters based on the distance threshold
-        for angle, distance in enumerate(distances):
+        for current_data_point in sorted_data_points:
             # Step 2: Form clusters based on the distance threshold
             if not current_cluster:
-                current_cluster.append(distance)
+                current_cluster.append(current_data_point)
             else:
                 # Check if the current distance is close to the last distance in the cluster
-                prev_distance = current_cluster[-1]
-                if abs(distance - prev_distance) <= epsilon:
-                    current_cluster.append(distance)
+                prev_data_point = current_cluster[-1]
+                if self.distance(current_data_point, prev_data_point) <= epsilon:
+                    current_cluster.append(current_data_point)
                 else:
                     # Save the completed cluster and start a new one
                     clusters.append(current_cluster)
-                    current_cluster = []
-
+                    current_cluster = [current_data_point]
 
         # Add the last cluster if any
         if current_cluster:
@@ -108,32 +115,69 @@ class robot:
         # Step 3: Calculate and print the medians of each cluster
         median_array = []
         for cluster in clusters:
-            median_distance = statistics.median_low(cluster)
-            median_array.append(median_distance)
+            median_point = statistics.median_low(cluster)
+            median_array.append(median_point)
         return median_array
     
+    def form_lattice_structure(self):
+        obstacle_coordinates_np = np.array(self.obstacle_coordinates)
+        
+        # Initialize Agglomerative Clustering
+        # The metric can be 'euclidean', 'manhattan', or a custom distance function
+        agg_clustering = cluster.AgglomerativeClustering(
+            n_clusters=None,    # Set to None to decide the number of clusters based on distance threshold
+            distance_threshold=3,  # Distance threshold to merge clusters, you can adjust this value
+            metric='euclidean',  # You can also change to other distance metrics, e.g., 'manhattan'
+            linkage='ward'  # The linkage criterion defines how the distance between clusters is calculated
+        )
+
+        # Fit the model
+        agg_clustering.fit(obstacle_coordinates_np)
+
+        # Print the clusters
+        labels = agg_clustering.labels_
+        unique_labels = set(labels)
+
+        # Group points by cluster label
+        for cluster_id in unique_labels:
+            print(f"Cluster {cluster_id}:")
+            for i, label in enumerate(labels):
+                if label == cluster_id:
+                    print(f"    {obstacle_coordinates_np[i]}")
+        
+        
+            
+    
+    def is_within_tolerance(self, new_point, obstacles, tolerance):
+        # Check if any point in obstacles is within tolerance of new_point
+        for existing_point in obstacles:
+            distance = dist(new_point, existing_point)  # Use Euclidean distance
+            if distance < tolerance:
+                return True  # The point is too close, treat it as a duplicate
+        return False  # The point is far enough to be considered unique
+
     
     def process_scanner_data(self,msg):
-            # Threshold limit to consider as an obstacle (in meters)
-        R_max = 10.0  # Adjust based on your needs
+        # Threshold limit to consider as an obstacle (in meters)
+        R_max = 10.0
         obstacles = []
         distances = []
         angles = []
         # Iterate through laser scan ranges and print angles where distance < limit
         for angle, distance in enumerate(msg.ranges):
-        # Check if distance is less than the limit
             if distance < R_max:
                 distances.append(distance)
                 angles.append(angle)
-        rounded_distances = np.round(distances, 4)
-        obstacle_distances = self.cluster_and_get_medians(rounded_distances, 1)
+        rounded_distances = np.round(distances, 4).tolist()
+        obstacle_distances = self.get_medians(rounded_distances, 0.1)
         indices = [i for i, val in enumerate(rounded_distances) if val in obstacle_distances]
         for index in indices:
             obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
             obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
-            
-            obstacles.append((obstacle_x,obstacle_y))
-        print("Obstacles are at:", obstacles)
+            obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3))
+            if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1):
+                self.obstacle_coordinates.append(obstacle_coordinate)
+        # print("Obstacles are at:", self.obstacle_coordinates)
 
 
     def wall_following(self):
@@ -169,6 +213,8 @@ class robot:
 
         # Distance Error
         self.dis_err = (sqrt(self.incx**2+self.incy**2))
+        if self.dis_err < 1:
+            self.form_lattice_structure()
         #print(self.dis_err)        
 
         # Gradient of Bearing
