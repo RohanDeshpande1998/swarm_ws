@@ -48,7 +48,7 @@ class robot:
         self.robot = []
         self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
         self.initial_no = -1                      
-        self.goal = Point(2.0, 4, 0.0) #Giving fixed goal for now
+        self.goal = Point(8.0, 0.0, 0.0) #Giving fixed goal for now
         self.odom = Odometry()
         self.namespace = rospy.get_namespace()
         self.speed = Twist()
@@ -63,6 +63,7 @@ class robot:
         # self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)      
         
         self.obstacle_coordinates = []
+        self.lattice_centroids = []
         
     def update_Odom(self,odom):
         """ Odometry of current bot"""        
@@ -130,23 +131,24 @@ class robot:
             metric='euclidean',  # You can also change to other distance metrics, e.g., 'manhattan'
             linkage='ward'  # The linkage criterion defines how the distance between clusters is calculated
         )
-
         # Fit the model
         agg_clustering.fit(obstacle_coordinates_np)
 
         # Print the clusters
         labels = agg_clustering.labels_
         unique_labels = set(labels)
-
+        self.lattice_centroids = []
         # Group points by cluster label
-        for cluster_id in unique_labels:
-            print(f"Cluster {cluster_id}:")
+        for lattice_id in unique_labels:    
+            cluster_points = obstacle_coordinates_np[labels == lattice_id]
+            lattice_centroid = np.mean(cluster_points, axis=0)  # Mean of points in the cluster
+            self.lattice_centroids.append(lattice_centroid)
+            print(f"Lattice {lattice_id}:")
             for i, label in enumerate(labels):
-                if label == cluster_id:
+                if label == lattice_id:
                     print(f"    {obstacle_coordinates_np[i]}")
-        
-        
-            
+    
+    
     
     def is_within_tolerance(self, new_point, obstacles, tolerance):
         # Check if any point in obstacles is within tolerance of new_point
@@ -160,7 +162,6 @@ class robot:
     def process_scanner_data(self,msg):
         # Threshold limit to consider as an obstacle (in meters)
         R_max = 10.0
-        obstacles = []
         distances = []
         angles = []
         # Iterate through laser scan ranges and print angles where distance < limit
@@ -180,23 +181,73 @@ class robot:
         # print("Obstacles are at:", self.obstacle_coordinates)
 
 
-    def wall_following(self):
-        """funct to follow wall boundary
-        Turn Right by default or rotate on CCW fashion"""
-        # print("Wall following")
-        deg = 30
-        dst = 0.5
-        # while True:
-        if min(self.ranges[0:deg]) <= dst or min(self.ranges[(359-deg):]) <= dst: # front wall
-            self.speed.angular.z = -0.2
-            self.speed.linear.x = 0.0
-        elif min(self.ranges[deg:120]) < dst: # left wall 
-            self.speed.angular.z = 0.0
-            self.speed.linear.x = 0.2
-            # print("Left wall")
-        else:
-            self.speed.angular.z = 0.1
-            self.speed.linear.x = 0.2
+    def compute_avoidance_velocity(self, robot_position, robot_yaw, avoidance_radius, linear_velocity, angular_velocity, max_angular_velocity=1.0):
+        """
+        Adjusts the robot's velocity to avoid clusters based on proximity.
+        """
+        repulsion_vector = np.array([0.0, 0.0])
+        # print("\n")
+        # print(self.lattice_centroids)
+        # print(robot_position)
+        # print(robot_yaw)
+        # print(linear_velocity)
+        # print(angular_velocity)
+        for centroid in self.lattice_centroids:
+            # Calculate distance from the robot to the cluster centroid
+            distance_to_centroid = dist(robot_position, centroid)
+            
+            if distance_to_centroid < avoidance_radius:
+                # Calculate the repulsive force (inverse distance weighting)
+                direction_away = np.subtract(robot_position, centroid)
+                normalized_direction = direction_away / np.linalg.norm(direction_away)
+                repulsion_vector += normalized_direction * (avoidance_radius - distance_to_centroid)
+                # print(repulsion_vector)
+        # If there is a repulsion vector, adjust velocities
+        if np.linalg.norm(repulsion_vector) > 0:
+            # Calculate desired angle to move away from cluster
+            target_angle = atan2(repulsion_vector[1], repulsion_vector[0])
+            angle_diff = target_angle - robot_yaw
+
+            # Normalize angle difference to the range [-pi, pi]
+            angle_diff = (angle_diff + np.pi) % (2 * np.pi) - np.pi
+
+            # Adjust angular velocity to steer away
+            adjusted_angular_velocity = np.clip(angle_diff * 2.0, -max_angular_velocity, max_angular_velocity)
+
+            # Adjust linear velocity based on proximity
+            if isinstance(linear_velocity, (list, tuple, np.ndarray)):
+                # Handle vector linear velocity (e.g., [vx, vy])
+                adjusted_linear_velocity = [
+                    v * max(0, 1 - (np.linalg.norm(repulsion_vector) / avoidance_radius))
+                    for v in linear_velocity
+                ]
+            else:
+                # Handle scalar linear velocity
+                adjusted_linear_velocity = linear_velocity * max(0, 1 - (np.linalg.norm(repulsion_vector) / avoidance_radius))
+            # print(adjusted_linear_velocity, adjusted_angular_velocity)
+            return adjusted_linear_velocity, adjusted_angular_velocity
+        # print(linear_velocity, angular_velocity)
+        # No obstacles nearby, proceed with given velocities
+        return linear_velocity, angular_velocity
+        
+
+    # def wall_following(self):
+    #     """funct to follow wall boundary
+    #     Turn Right by default or rotate on CCW fashion"""
+    #     # print("Wall following")
+    #     deg = 30
+    #     dst = 0.5
+    #     # while True:
+    #     if min(self.ranges[0:deg]) <= dst or min(self.ranges[(359-deg):]) <= dst: # front wall
+    #         self.speed.angular.z = -0.2
+    #         self.speed.linear.x = 0.0
+    #     elif min(self.ranges[deg:120]) < dst: # left wall 
+    #         self.speed.angular.z = 0.0
+    #         self.speed.linear.x = 0.2
+    #         # print("Left wall")
+    #     else:
+    #         self.speed.angular.z = 0.1
+    #         self.speed.linear.x = 0.2
     
     def set_goal(self):
         """write code for identification based goal update of robot"""
@@ -213,8 +264,7 @@ class robot:
 
         # Distance Error
         self.dis_err = (sqrt(self.incx**2+self.incy**2))
-        if self.dis_err < 1:
-            self.form_lattice_structure()
+  
         #print(self.dis_err)        
 
         # Gradient of Bearing
@@ -229,12 +279,28 @@ class robot:
             
         #     self.disij.append(dist)
         #     self.delij.append(ang)  
+        avoidance_radius = 1.5 
         if (self.dis_err) >= 0.850:
             """write code to control movement of robots based on conditions satisfied"""
             #No obstacle detected -> 
             self.speed.linear.x = 0.18
             self.speed.angular.z = K*np.sign(self.dtheta)
-                
+            self.form_lattice_structure() 
+            robot_speed, robot_angular_velocity = self.compute_avoidance_velocity(
+                (self.odom.x, self.odom.y),
+                (self.yaw),
+                avoidance_radius,
+                (self.speed.linear.x, self.speed.linear.y),
+                (self.speed.angular.z)
+            )
+            self.speed.linear.x = robot_speed[0]
+            self.speed.linear.y = robot_speed[1]
+            self.speed.angular.z = robot_angular_velocity
+        else:
+            self.speed.linear.x = 0
+            self.speed.linear.y = 0
+            self.speed.angular.z = 0
+            print("GOAAAAAAAAAAAAAAAAAALLLLLLLLLLLLLLLL REEEEEEEEEEEEEAAAAAAAAAAAAAAAACCCCCCCCCCCCCCHHHHHHHHHHHHHHHHHEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDD")  
             # #Robot Near -> 
             # t = rospy.get_time()
             # self.speed.linear.x = max((0.18 -(5000-t)*0.0001),0)                    
