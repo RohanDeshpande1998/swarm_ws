@@ -36,6 +36,7 @@ class robot:
         self.y = 0        
         self.incident_time = []           
         self.yaw = 0
+        self.odom = Pose2D(self.x,self.y,self.yaw)
         self.range = [0]
         self.time = 0
         self.angle = 0
@@ -49,13 +50,13 @@ class robot:
         self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
         self.initial_no = -1                      
         self.goal = Point(8.0, 0.0, 0.0) #Giving fixed goal for now
-        self.odom = Odometry()
+        # self.odom = Odometry()
         self.namespace = rospy.get_namespace()
         self.speed = Twist()
         self.hist = deque(maxlen=20)
 
-        self.object_detector = rospy.Subscriber('/scan',LaserScan, self.scanner)
         self.odom_sub = rospy.Subscriber("/odom",Odometry,self.update_Odom) 
+        self.object_detector = rospy.Subscriber('/scan',LaserScan, self.scanner)
 
         self.cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=1)    
         self.pubg = rospy.Publisher('/goal', Point, queue_size=1)
@@ -315,7 +316,8 @@ if __name__ == '__main__':
     k = 0
     l = [] #l is time
     rate = rospy.Rate(4)
-    bot = robot(2)     
+    bot_1 = robot(1)
+    bot_2 = robot(1)     
     rospy.sleep(6)
     # bot.set_goal()
     while not rospy.is_shutdown() and k < 500000:
@@ -323,5 +325,6 @@ if __name__ == '__main__':
         h = 0.25
         K = 0.3
         l.append((k+1)/10) # Time
-        bot.controller(k)            
+        bot_1.controller(k)
+        bot_2.controller(k)            
         rate.sleep()
