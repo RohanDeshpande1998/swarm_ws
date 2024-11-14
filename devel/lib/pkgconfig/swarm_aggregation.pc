@@ -3,6 +3,6 @@ prefix=/home/rohan/swarm_ws/devel
 Name: swarm_aggregation
 Description: Description of swarm_aggregation
 Version: 0.0.0
-Cflags: 
+Cflags: -I/home/rohan/swarm_ws/devel/include
 Libs: -L${prefix}/lib 
-Requires: 
+Requires: rospy std_msgs nav_msgs message_runtime

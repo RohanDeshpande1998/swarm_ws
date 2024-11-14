@@ -6,8 +6,8 @@ from sensor_msgs.msg import LaserScan
 import numpy as np
 from sklearn import cluster
 from collections import deque
-from math import *
-# from swarm_aggregation.msg import obs
+from math import * 
+from swarm_aggregation.msg import botPose
 from tf.transformations import euler_from_quaternion
 from nav_msgs.msg import Odometry
 import matplotlib.pyplot as plt
@@ -36,7 +36,6 @@ class robot:
         self.y = 0        
         self.incident_time = []           
         self.yaw = 0
-        self.odom = Pose2D(self.x,self.y,self.yaw)
         self.range = [0]
         self.time = 0
         self.angle = 0
@@ -50,21 +49,25 @@ class robot:
         self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
         self.initial_no = -1                      
         self.goal = Point(8.0, 0.0, 0.0) #Giving fixed goal for now
-        # self.odom = Odometry()
         self.namespace = rospy.get_namespace()
         self.speed = Twist()
         self.hist = deque(maxlen=20)
 
-        self.odom_sub = rospy.Subscriber("/odom",Odometry,self.update_Odom) 
+        self.odom_sub = rospy.Subscriber("/odom",Odometry,self.update_Odom)
+        self.bot_data = rospy.Subscriber("/obs_data", botPose, self.get_other_bot_position) 
         self.object_detector = rospy.Subscriber('/scan',LaserScan, self.scanner)
 
         self.cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=1)    
         self.pubg = rospy.Publisher('/goal', Point, queue_size=1)
         self.rad_pub = rospy.Publisher('/radius', Point, queue_size=1)
-        # self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)      
+        # self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)
         
         self.obstacle_coordinates = []
         self.lattice_centroids = []
+        
+    def get_other_bot_position(self, msg):
+        bot_info = msg.botpose
+        print(bot_info)
         
     def update_Odom(self,odom):
         """ Odometry of current bot"""        
@@ -123,31 +126,32 @@ class robot:
     
     def form_lattice_structure(self):
         obstacle_coordinates_np = np.array(self.obstacle_coordinates)
-        
+        print(obstacle_coordinates_np)
+        if (obstacle_coordinates_np.shape[0]>=2): 
         # Initialize Agglomerative Clustering
         # The metric can be 'euclidean', 'manhattan', or a custom distance function
-        agg_clustering = cluster.AgglomerativeClustering(
-            n_clusters=None,    # Set to None to decide the number of clusters based on distance threshold
-            distance_threshold=3,  # Distance threshold to merge clusters, you can adjust this value
-            metric='euclidean',  # You can also change to other distance metrics, e.g., 'manhattan'
-            linkage='ward'  # The linkage criterion defines how the distance between clusters is calculated
-        )
-        # Fit the model
-        agg_clustering.fit(obstacle_coordinates_np)
+            agg_clustering = cluster.AgglomerativeClustering(
+                n_clusters=None,    # Set to None to decide the number of clusters based on distance threshold
+                distance_threshold=3,  # Distance threshold to merge clusters, you can adjust this value
+                metric='euclidean',  # You can also change to other distance metrics, e.g., 'manhattan'
+                linkage='ward'  # The linkage criterion defines how the distance between clusters is calculated
+            )
+            # Fit the model
+            agg_clustering.fit(obstacle_coordinates_np)
 
-        # Print the clusters
-        labels = agg_clustering.labels_
-        unique_labels = set(labels)
-        self.lattice_centroids = []
-        # Group points by cluster label
-        for lattice_id in unique_labels:    
-            cluster_points = obstacle_coordinates_np[labels == lattice_id]
-            lattice_centroid = np.mean(cluster_points, axis=0)  # Mean of points in the cluster
-            self.lattice_centroids.append(lattice_centroid)
-            print(f"Lattice {lattice_id}:")
-            for i, label in enumerate(labels):
-                if label == lattice_id:
-                    print(f"    {obstacle_coordinates_np[i]}")
+            # Print the clusters
+            labels = agg_clustering.labels_
+            unique_labels = set(labels)
+            self.lattice_centroids = []
+            # Group points by cluster label
+            for lattice_id in unique_labels:    
+                cluster_points = obstacle_coordinates_np[labels == lattice_id]
+                lattice_centroid = np.mean(cluster_points, axis=0)  # Mean of points in the cluster
+                self.lattice_centroids.append(lattice_centroid)
+                print(f"Lattice {lattice_id}:")
+                for i, label in enumerate(labels):
+                    if label == lattice_id:
+                        print(f"    {obstacle_coordinates_np[i]}")
     
     
     

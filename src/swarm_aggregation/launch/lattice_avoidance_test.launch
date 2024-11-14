@@ -5,15 +5,17 @@
   <arg name="first_tb3_x_pos" default=" -4.0"/>
   <arg name="first_tb3_y_pos" default=" 5.0"/>
   <arg name="first_tb3_z_pos" default=" 0.0"/>
-  <arg name="first_tb3_yaw"   default=" 1.23"/>
+  <arg name="first_tb3_yaw"   default=" 0"/>
+  <!-- <arg name="first_tb3_yaw"   default=" 1.23"/> -->
 
-  <arg name="second_tb3_x_pos" default=" 0.0"/>
+  <arg name="second_tb3_x_pos" default=" -2.0"/>
   <arg name="second_tb3_y_pos" default=" 5.0"/>
   <arg name="second_tb3_z_pos" default=" 0.0"/>
-  <arg name="second_tb3_yaw"   default=" 1.23"/>
+  <arg name="second_tb3_yaw"   default=" 0"/>
 
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
-    <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_three_lattice_structures.world"/> 
+    <arg name="world_name" value="$(find swarm_aggregation)/worlds/blank_world.world"/>
+    <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_three_lattice_structures.world"/>  -->
     <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_two_lattice_structures_with_end_pillar.world"/>  -->
     <arg name="paused" value="true"/>
     <arg name="use_sim_time" value="true"/>
@@ -57,5 +59,6 @@
       <remap from="/obs" to="/$(arg second_tb3)/obs"/>
     </node>
   </group>
-
+  
+  <node pkg="swarm_aggregation" type="detect_bot.py" name="obs_data"/>
 </launch>
