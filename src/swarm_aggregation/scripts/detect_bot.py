@@ -11,7 +11,7 @@ class Obstacles:
 
     def __init__(self):
 
-        self.obs_pub = rospy.Publisher('/obs_data', botPose, queue_size = 10)
+        self.obs_pub = rospy.Publisher('/obs_data', botPose, queue_size = 2)
         #uncomment following lines if using gazebo simulation
         # rospy.Subscriber('/tb3_0/odom', Odometry, self.callback_odom, '/tb3_0/')
         rospy.Subscriber('/tb3_1/odom', Odometry, self.callback_odom, '/tb3_1/')
@@ -98,7 +98,7 @@ class Obstacles:
 if __name__ == '__main__':
     rospy.init_node('collision_cone_obstacles', anonymous = True)
     s = Obstacles()
-    r = rospy.Rate(10)
+    r = rospy.Rate(4)
     while not rospy.is_shutdown():
         obs = []
         bot_id = []
@@ -109,6 +109,6 @@ if __name__ == '__main__':
         obs_data = botPose()
         obs_data.botpose = obs
         obs_data.bot_id = bot_id
-        print(obs_data)
+        # print(obs_data)
         s.obs_pub.publish(obs_data)
         # r.sleep() 

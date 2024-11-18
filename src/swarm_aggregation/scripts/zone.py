@@ -46,13 +46,13 @@ class robot:
         self.bearing = [0]
         self.neigh = 0
         self.robot = []
+        self.bot_position = []
         self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
         self.initial_no = -1                      
         self.goal = Point(8.0, 0.0, 0.0) #Giving fixed goal for now
         self.namespace = rospy.get_namespace()
         self.speed = Twist()
         self.hist = deque(maxlen=20)
-
         self.odom_sub = rospy.Subscriber("/odom",Odometry,self.update_Odom)
         self.bot_data = rospy.Subscriber("/obs_data", botPose, self.get_other_bot_position) 
         self.object_detector = rospy.Subscriber('/scan',LaserScan, self.scanner)
@@ -66,8 +66,12 @@ class robot:
         self.lattice_centroids = []
         
     def get_other_bot_position(self, msg):
+        self.bot_position = []
         bot_info = msg.botpose
-        print(bot_info)
+        for i in range(len(msg.bot_id)):
+            position = bot_info[i].pose.pose.position
+            self.bot_position.append([position.x, position.y])
+            
         
     def update_Odom(self,odom):
         """ Odometry of current bot"""        
@@ -93,7 +97,7 @@ class robot:
         point2_tuple = (point2,) if not isinstance(point2, (tuple, list)) else point2
         return dist(point1_tuple, point2_tuple)
 
-    def get_medians(self, data_points, epsilon):
+    def get_medians_and_edge(self, data_points, epsilon):
         sorted_data_points = sorted(data_points)
         clusters = []
         current_cluster = []
@@ -119,14 +123,17 @@ class robot:
 
         # Step 3: Calculate and print the medians of each cluster
         median_array = []
+        edge_points_array = []
         for cluster in clusters:
             median_point = statistics.median_low(cluster)
             median_array.append(median_point)
-        return median_array
+            edge_point = max(cluster, key=lambda point: abs(point - median_point))
+            edge_points_array.append(edge_point) 
+        return median_array, edge_points_array
     
     def form_lattice_structure(self):
         obstacle_coordinates_np = np.array(self.obstacle_coordinates)
-        print(obstacle_coordinates_np)
+        # print(obstacle_coordinates_np)
         if (obstacle_coordinates_np.shape[0]>=2): 
         # Initialize Agglomerative Clustering
         # The metric can be 'euclidean', 'manhattan', or a custom distance function
@@ -148,10 +155,10 @@ class robot:
                 cluster_points = obstacle_coordinates_np[labels == lattice_id]
                 lattice_centroid = np.mean(cluster_points, axis=0)  # Mean of points in the cluster
                 self.lattice_centroids.append(lattice_centroid)
-                print(f"Lattice {lattice_id}:")
-                for i, label in enumerate(labels):
-                    if label == lattice_id:
-                        print(f"    {obstacle_coordinates_np[i]}")
+                # print(f"Lattice {lattice_id}:")
+                # for i, label in enumerate(labels):
+                    # if label == lattice_id:
+                        # print(f"    {obstacle_coordinates_np[i]}")
     
     
     
@@ -167,6 +174,7 @@ class robot:
     def process_scanner_data(self,msg):
         # Threshold limit to consider as an obstacle (in meters)
         R_max = 10.0
+        obs_size_limit = 5
         distances = []
         angles = []
         # Iterate through laser scan ranges and print angles where distance < limit
@@ -175,15 +183,25 @@ class robot:
                 distances.append(distance)
                 angles.append(angle)
         rounded_distances = np.round(distances, 4).tolist()
-        obstacle_distances = self.get_medians(rounded_distances, 0.1)
-        indices = [i for i, val in enumerate(rounded_distances) if val in obstacle_distances]
-        for index in indices:
-            obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
-            obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
-            obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3))
-            if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1):
-                self.obstacle_coordinates.append(obstacle_coordinate)
-        # print("Obstacles are at:", self.obstacle_coordinates)
+        median_obstacle_distance_list, edge_points_list = self.get_medians_and_edge(rounded_distances, 0.1)
+        median_obstacle_distance_indices_list = [rounded_distances.index(val) for val in median_obstacle_distance_list]
+        edge_points_indices_list = [rounded_distances.index(val) for val in edge_points_list]
+        for enum, index in enumerate(median_obstacle_distance_indices_list):
+            if ((rounded_distances[index]*tan(radians(abs(angles[index] - angles[edge_points_indices_list[enum]])))) < obs_size_limit):
+                obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
+                obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
+                obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3))
+                if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1) and not self.is_within_tolerance(obstacle_coordinate, self.bot_position, 0.5):
+                    self.obstacle_coordinates.append(obstacle_coordinate)
+                # print("Obstacle mila")
+            else:
+                print("Median List:", median_obstacle_distance_list)
+                print("Edge point list:", edge_points_list)
+                print("Edge points indices list:", edge_points_indices_list)
+                print("Angle of median, edge distance is",angles[index], angles[edge_points_indices_list[enum]])
+                print("WALL DETECTED AAAAA")
+                
+            
 
 
     def compute_avoidance_velocity(self, robot_position, robot_yaw, avoidance_radius, linear_velocity, angular_velocity, max_angular_velocity=1.0):
@@ -321,7 +339,7 @@ if __name__ == '__main__':
     l = [] #l is time
     rate = rospy.Rate(4)
     bot_1 = robot(1)
-    bot_2 = robot(1)     
+    # bot_2 = robot(1)     
     rospy.sleep(6)
     # bot.set_goal()
     while not rospy.is_shutdown() and k < 500000:
@@ -330,5 +348,5 @@ if __name__ == '__main__':
         K = 0.3
         l.append((k+1)/10) # Time
         bot_1.controller(k)
-        bot_2.controller(k)            
+        # bot_2.controller(k)            
         rate.sleep()
