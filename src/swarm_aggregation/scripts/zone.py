@@ -21,8 +21,8 @@ class Lattice():
         self.clusters = []
         self.pseudo_lattice = []
         self.lattice_centroid = []
-        self.lattice_length = 3
-        self.length_error = 0.15
+        self.lattice_length = 1.6211
+        self.length_error = 0.4
         
         
     def process_new_data_point(self, obstacle_2d_data):
@@ -42,7 +42,6 @@ class Lattice():
                     return True
         return False
              
-
     def cluster_points(self, obstacle_2d_data):
         if not self.clusters:  # If no clusters exist
             self.clusters.append([False, obstacle_2d_data])        
@@ -66,7 +65,7 @@ class Lattice():
     
     def form_triangle_lattice(self, cluster):
         if not cluster[0]:
-            centroid_of_lattice = np.mean(cluster[1:])
+            centroid_of_lattice = np.mean(cluster[1:], axis=0)
             self.lattice_centroid.append(centroid_of_lattice)
     
     def form_pseudo_triangle_lattice(self, cluster):
@@ -141,6 +140,8 @@ class robot:
         
         self.obstacle_coordinates = []
         self.lattice_centroids = []
+        
+        self.lattice_obj = Lattice()
         
     def get_other_bot_position(self, msg):
         self.bot_position = []
@@ -230,70 +231,35 @@ class robot:
             edge_points_array.append(edge_point)
         
         return median_array, edge_points_array
-
-    def get_medians_and_edge(self, data_points, epsilon):
-        # sorted_data_points = sorted(data_points)
-        clusters = []
-        current_cluster = []
-        
-        # Step 1: Form clusters based on the distance threshold
-        for current_data_point in data_points:
-            # Step 2: Form clusters based on the distance threshold
-            if not current_cluster:
-                current_cluster.append(current_data_point)
-            else:
-                # Check if the current distance is close to the last distance in the cluster
-                prev_data_point = current_cluster[-1]
-                if self.distance(current_data_point, prev_data_point) <= epsilon:
-                    current_cluster.append(current_data_point)
-                else:
-                    # Save the completed cluster and start a new one
-                    clusters.append(current_cluster)
-                    current_cluster = [current_data_point]
-
-        # Add the last cluster if any
-        if current_cluster:
-            clusters.append(current_cluster)
-        
-        clusters = [cluster for cluster in clusters if len(cluster) >= 2] #Removing false positives
-        # Step 3: Calculate and print the medians of each cluster
-        median_array = []
-        edge_points_array = []
-        for cluster in clusters:
-            median_point = statistics.median_low(cluster)
-            median_array.append(median_point)
-            edge_point = max(cluster, key=lambda point: abs(point - median_point))
-            edge_points_array.append(edge_point)  
-        return median_array, edge_points_array
     
-    def form_lattice_structure(self):
-        obstacle_coordinates_np = np.array(self.obstacle_coordinates)
-        # print(obstacle_coordinates_np)
-        if (obstacle_coordinates_np.shape[0]>=2): 
-        # Initialize Agglomerative Clustering
-        # The metric can be 'euclidean', 'manhattan', or a custom distance function
-            agg_clustering = cluster.AgglomerativeClustering(
-                n_clusters=None,    # Set to None to decide the number of clusters based on distance threshold
-                distance_threshold=3,  # Distance threshold to merge clusters, you can adjust this value
-                metric='euclidean',  # You can also change to other distance metrics, e.g., 'manhattan'
-                linkage='ward'  # The linkage criterion defines how the distance between clusters is calculated
-            )
-            # Fit the model
-            agg_clustering.fit(obstacle_coordinates_np)
+    # def form_lattice_structure(self):
+    #     obstacle_coordinates_np = np.array(self.obstacle_coordinates)
+    #     # print(obstacle_coordinates_np)
+    #     if (obstacle_coordinates_np.shape[0]>=2): 
+    #     # Initialize Agglomerative Clustering
+    #     # The metric can be 'euclidean', 'manhattan', or a custom distance function
+    #         agg_clustering = cluster.AgglomerativeClustering(
+    #             n_clusters=None,    # Set to None to decide the number of clusters based on distance threshold
+    #             distance_threshold=3,  # Distance threshold to merge clusters, you can adjust this value
+    #             metric='euclidean',  # You can also change to other distance metrics, e.g., 'manhattan'
+    #             linkage='ward'  # The linkage criterion defines how the distance between clusters is calculated
+    #         )
+    #         # Fit the model
+    #         agg_clustering.fit(obstacle_coordinates_np)
 
-            # Print the clusters
-            labels = agg_clustering.labels_
-            unique_labels = set(labels)
-            self.lattice_centroids = []
-            # Group points by cluster label
-            for lattice_id in unique_labels:    
-                cluster_points = obstacle_coordinates_np[labels == lattice_id]
-                lattice_centroid = np.mean(cluster_points, axis=0)  # Mean of points in the cluster
-                self.lattice_centroids.append(lattice_centroid)
-                print(f"Lattice {lattice_id}:")
-                for i, label in enumerate(labels):
-                    if label == lattice_id:
-                        print(f"    {obstacle_coordinates_np[i]}")
+    #         # Print the clusters
+    #         labels = agg_clustering.labels_
+    #         unique_labels = set(labels)
+    #         self.lattice_centroids = []
+    #         # Group points by cluster label
+    #         for lattice_id in unique_labels:    
+    #             cluster_points = obstacle_coordinates_np[labels == lattice_id]
+    #             lattice_centroid = np.mean(cluster_points, axis=0)  # Mean of points in the cluster
+    #             self.lattice_centroids.append(lattice_centroid)
+    #             print(f"Lattice {lattice_id}:")
+    #             for i, label in enumerate(labels):
+    #                 if label == lattice_id:
+    #                     print(f"    {obstacle_coordinates_np[i]}")
     
     
     
@@ -308,7 +274,7 @@ class robot:
     
     def process_scanner_data(self,msg):
         # Threshold limit to consider as an obstacle (in meters)
-        R_max = 3.5
+        R_max = 2
         obs_size_limit = 2
         distances = []
         angles = []
@@ -329,8 +295,9 @@ class robot:
                 obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
                 obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3))
                 if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1) and not self.is_within_tolerance(obstacle_coordinate, self.bot_position, 0.5):
+                    self.lattice_obj.process_new_data_point(obstacle_coordinate)
                     self.obstacle_coordinates.append(obstacle_coordinate)
-                    print("Obstacle_coordinates:", self.obstacle_coordinates)
+                    # print("Obstacle_coordinates:", self.obstacle_coordinates)
                 # print("Obstacle mila")
             # else:
                 
@@ -427,7 +394,7 @@ class robot:
 
         # Gradient of Bearing
         self.dtheta = (self.bearing[k] - self.bearing[k-1])/h
-
+        self.lattice_obj.print_data("AAAAAAAA")
         # for obs_element in self.obs:
         #     x_diff = obs_element.x -self.x
         #     y_diff = obs_element.y -self.y
@@ -443,17 +410,18 @@ class robot:
             #No obstacle detected -> 
             self.speed.linear.x = 0.18
             self.speed.angular.z = K*np.sign(self.dtheta)
+            self.lattice_centroids = self.lattice_obj.lattice_centroid
             # self.form_lattice_structure() 
-            # robot_speed, robot_angular_velocity = self.compute_avoidance_velocity(
-            #     (self.odom.x, self.odom.y),
-            #     (self.yaw),
-            #     avoidance_radius,
-            #     (self.speed.linear.x, self.speed.linear.y),
-            #     (self.speed.angular.z)
-            # )
-            # self.speed.linear.x = robot_speed[0]
-            # self.speed.linear.y = robot_speed[1]
-            # self.speed.angular.z = robot_angular_velocity
+            robot_speed, robot_angular_velocity = self.compute_avoidance_velocity(
+                (self.odom.x, self.odom.y),
+                (self.yaw),
+                avoidance_radius,
+                (self.speed.linear.x, self.speed.linear.y),
+                (self.speed.angular.z)
+            )
+            self.speed.linear.x = robot_speed[0]
+            self.speed.linear.y = robot_speed[1]
+            self.speed.angular.z = robot_angular_velocity
         else:
             self.speed.linear.x = 0
             self.speed.linear.y = 0
