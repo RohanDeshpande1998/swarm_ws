@@ -82,29 +82,11 @@ class Lattice():
                 )
             self.pseudo_lattice.append([cluster[1], cluster[2], third_point_of_lattice_ccw, third_point_of_lattice_cw])
         
-    def print_data(self, arguments):
-        # if arguments == "all":
+    def print_data(self):
         print("lattice centroids: ", self.lattice_centroid)
         print("pseudo lattice coordinates: ", self.pseudo_lattice)
         print("clusters: ", self.clusters)
                 
-class obstacle(Pose2D):
-    def __init__(self,x,y,theta,dist,min_dis):
-        super().__init__(x,y,theta)
-        self.static = False
-        self.detected_time = rospy.get_time()
-        self.dist = dist
-        self.min_dis = min_dis
-    
-    def __eq__(self,other):
-        if abs(self.x - other.x)< 0.1 :
-            if abs(self.y - other.y)< 0.1 :
-                return True
-            else:
-                return False
-        else:
-            return False
-
 class robot:
     def __init__(self,no_of_bots): 
         self.total_bots = no_of_bots 
@@ -141,7 +123,7 @@ class robot:
         self.obstacle_coordinates = []
         self.lattice_centroids = []
         
-        self.lattice_obj = Lattice()
+        self.observed_lattice_obj = Lattice()
         
     def get_other_bot_position(self, msg):
         self.bot_position = []
@@ -231,38 +213,7 @@ class robot:
             edge_points_array.append(edge_point)
         
         return median_array, edge_points_array
-    
-    # def form_lattice_structure(self):
-    #     obstacle_coordinates_np = np.array(self.obstacle_coordinates)
-    #     # print(obstacle_coordinates_np)
-    #     if (obstacle_coordinates_np.shape[0]>=2): 
-    #     # Initialize Agglomerative Clustering
-    #     # The metric can be 'euclidean', 'manhattan', or a custom distance function
-    #         agg_clustering = cluster.AgglomerativeClustering(
-    #             n_clusters=None,    # Set to None to decide the number of clusters based on distance threshold
-    #             distance_threshold=3,  # Distance threshold to merge clusters, you can adjust this value
-    #             metric='euclidean',  # You can also change to other distance metrics, e.g., 'manhattan'
-    #             linkage='ward'  # The linkage criterion defines how the distance between clusters is calculated
-    #         )
-    #         # Fit the model
-    #         agg_clustering.fit(obstacle_coordinates_np)
-
-    #         # Print the clusters
-    #         labels = agg_clustering.labels_
-    #         unique_labels = set(labels)
-    #         self.lattice_centroids = []
-    #         # Group points by cluster label
-    #         for lattice_id in unique_labels:    
-    #             cluster_points = obstacle_coordinates_np[labels == lattice_id]
-    #             lattice_centroid = np.mean(cluster_points, axis=0)  # Mean of points in the cluster
-    #             self.lattice_centroids.append(lattice_centroid)
-    #             print(f"Lattice {lattice_id}:")
-    #             for i, label in enumerate(labels):
-    #                 if label == lattice_id:
-    #                     print(f"    {obstacle_coordinates_np[i]}")
-    
-    
-    
+        
     def is_within_tolerance(self, new_point, obstacles, tolerance):
         # Check if any point in obstacles is within tolerance of new_point
         for existing_point in obstacles:
@@ -295,13 +246,10 @@ class robot:
                 obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
                 obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3))
                 if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1) and not self.is_within_tolerance(obstacle_coordinate, self.bot_position, 0.5):
-                    self.lattice_obj.process_new_data_point(obstacle_coordinate)
+                    self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
                     self.obstacle_coordinates.append(obstacle_coordinate)
                     # print("Obstacle_coordinates:", self.obstacle_coordinates)
                 # print("Obstacle mila")
-            # else:
-                
-                # print("WALL DETECTED AAAAA")
                 
             
 
@@ -356,23 +304,58 @@ class robot:
         return linear_velocity, angular_velocity
         
 
-    # def wall_following(self):
-    #     """funct to follow wall boundary
-    #     Turn Right by default or rotate on CCW fashion"""
-    #     # print("Wall following")
-    #     deg = 30
-    #     dst = 0.5
-    #     # while True:
-    #     if min(self.ranges[0:deg]) <= dst or min(self.ranges[(359-deg):]) <= dst: # front wall
-    #         self.speed.angular.z = -0.2
-    #         self.speed.linear.x = 0.0
-    #     elif min(self.ranges[deg:120]) < dst: # left wall 
-    #         self.speed.angular.z = 0.0
-    #         self.speed.linear.x = 0.2
-    #         # print("Left wall")
-    #     else:
-    #         self.speed.angular.z = 0.1
-    #         self.speed.linear.x = 0.2
+    def navigate_near_obstacle(self, robot_position):
+        """funct to follow wall boundary
+        Turn Right by default or rotate on CCW fashion"""
+        # print("Wall following")
+        deg = 30
+        dst = 1
+        avoidance_radius = 1
+        
+        closest_distance = float('inf')
+        
+        for centroid in self.lattice_centroids:
+            distance = dist(centroid, robot_position)
+            if distance < closest_distance:
+                closest_distance = distance
+        
+        if (closest_distance > avoidance_radius):
+            if min(self.range[0:deg]) <= dst or min(self.range[(359-deg):]) <= dst: # front wall
+                self.speed.angular.z = -0.2
+                self.speed.linear.x = 0.0
+                print("Front wall")
+            elif min(self.range[deg:120]) < dst: # left wall 
+                self.speed.angular.z = 0.0
+                self.speed.linear.x = 0.2
+                print("Left wall")
+            elif min(self.range[(359-120):(359-deg)]) < dst: # right wall
+                self.speed.angular.z = 0.0
+                self.speed.linear.x = -0.2
+                print("Right wall")
+            else:
+                print("avoidance vel computed")
+                robot_speed, robot_angular_velocity = self.compute_avoidance_velocity(
+                    (self.odom.x, self.odom.y),
+                    (self.yaw),
+                    avoidance_radius,
+                    (self.speed.linear.x, self.speed.linear.y),
+                    (self.speed.angular.z)
+                )
+                self.speed.linear.x = robot_speed[0]
+                self.speed.linear.y = robot_speed[1]
+                self.speed.angular.z = robot_angular_velocity
+        else:
+            print("avoidance vel computed")
+            robot_speed, robot_angular_velocity = self.compute_avoidance_velocity(
+                (self.odom.x, self.odom.y),
+                (self.yaw),
+                avoidance_radius,
+                (self.speed.linear.x, self.speed.linear.y),
+                (self.speed.angular.z)
+            )
+            self.speed.linear.x = robot_speed[0]
+            self.speed.linear.y = robot_speed[1]
+            self.speed.angular.z = robot_angular_velocity
     
     def set_goal(self):
         """write code for identification based goal update of robot"""
@@ -389,39 +372,21 @@ class robot:
 
         # Distance Error
         self.dis_err = (sqrt(self.incx**2+self.incy**2))
-  
-        #print(self.dis_err)        
-
+        
         # Gradient of Bearing
         self.dtheta = (self.bearing[k] - self.bearing[k-1])/h
-        self.lattice_obj.print_data("AAAAAAAA")
-        # for obs_element in self.obs:
-        #     x_diff = obs_element.x -self.x
-        #     y_diff = obs_element.y -self.y
-            
-        #     dist = sqrt(x_diff**2 + y_diff**2)
-        #     ang = atan2(y_diff, x_diff)
-            
-        #     self.disij.append(dist)
-        #     self.delij.append(ang)  
-        avoidance_radius = 1.5 
         if (self.dis_err) >= 0.850:
             """write code to control movement of robots based on conditions satisfied"""
             #No obstacle detected -> 
             self.speed.linear.x = 0.18
             self.speed.angular.z = K*np.sign(self.dtheta)
-            self.lattice_centroids = self.lattice_obj.lattice_centroid
-            # self.form_lattice_structure() 
-            robot_speed, robot_angular_velocity = self.compute_avoidance_velocity(
-                (self.odom.x, self.odom.y),
-                (self.yaw),
-                avoidance_radius,
-                (self.speed.linear.x, self.speed.linear.y),
-                (self.speed.angular.z)
-            )
-            self.speed.linear.x = robot_speed[0]
-            self.speed.linear.y = robot_speed[1]
-            self.speed.angular.z = robot_angular_velocity
+            self.lattice_centroids = self.observed_lattice_obj.lattice_centroid
+            # self.form_lattice_structure()
+            robot_position = [self.odom.x, self.odom.y]
+            obstacle_avoidance_distance = 2 #2meters
+            for obstacle_coordinate in self.obstacle_coordinates:
+                if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
+                    self.navigate_near_obstacle(robot_position)
         else:
             self.speed.linear.x = 0
             self.speed.linear.y = 0
@@ -453,25 +418,25 @@ if __name__ == '__main__':
         bot_1.controller(k)
         # bot_2.controller(k)            
         rate.sleep()
-    # lattice_obj = Lattice()
+    # observed_lattice_obj = Lattice()
     # # First test point, will start forming a cluster
     # obstacle_2d_data = (1, 2)  
-    # lattice_obj.process_new_data_point(obstacle_2d_data)
-    # print("Clusters after 1st point:", lattice_obj.clusters)
+    # observed_lattice_obj.process_new_data_point(obstacle_2d_data)
+    # print("Clusters after 1st point:", observed_lattice_obj.clusters)
 
     # # Second test point, will form a pseudo lattice as there's only one point in pseudo_lattice
     # obstacle_2d_data = (4, 2)  
-    # lattice_obj.process_new_data_point(obstacle_2d_data)
-    # print("Clusters after 2nd point:", lattice_obj.clusters)
+    # observed_lattice_obj.process_new_data_point(obstacle_2d_data)
+    # print("Clusters after 2nd point:", observed_lattice_obj.clusters)
     
     # # Third test point, will check if it matches with the pseudo lattice
     # obstacle_2d_data = (2.5, 4.6)  # This should be close to the second point, and should trigger the lattice formation
-    # lattice_obj.process_new_data_point(obstacle_2d_data)
-    # print("Clusters after 3rd point:", lattice_obj.clusters)
+    # observed_lattice_obj.process_new_data_point(obstacle_2d_data)
+    # print("Clusters after 3rd point:", observed_lattice_obj.clusters)
     
     # # Fourth test point, which should not match the existing pseudo lattice, so a new cluster will form
     # obstacle_2d_data = (5, 5)  
-    # lattice_obj.process_new_data_point(obstacle_2d_data)
-    # print("Clusters after 4th point:", lattice_obj.clusters)
+    # observed_lattice_obj.process_new_data_point(obstacle_2d_data)
+    # print("Clusters after 4th point:", observed_lattice_obj.clusters)
     
-    # lattice_obj.print_data("acjks")
+    # observed_lattice_obj.print_data("acjks")
