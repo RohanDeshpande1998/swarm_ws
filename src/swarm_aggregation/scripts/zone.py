@@ -11,12 +11,58 @@ from swarm_aggregation.msg import botPose
 from tf.transformations import euler_from_quaternion
 from nav_msgs.msg import Odometry
 import matplotlib.pyplot as plt
+import random
 
 # Global Definitions
 X = 0
 Y = 1
 
-class Lattice():
+class Workspace:
+    def __init__(self, no_of_bots, x_min, x_max, y_min, y_max):
+        self.x_min = x_min
+        self.x_max = x_max
+        self.y_min = y_min
+        self.y_max = y_max
+        self.goal = [None, None] 
+        self.lattice_data = [] # Array containing list of (lattice_centroid, radius)
+        self.obstacle_data = [] # Array contaonong list of (obstacle_coordinates, diameter)
+        self.agents_location = [None]*no_of_bots
+        
+    def update_agent_location(self, id, bot_position):
+        self.agents_location[id] = bot_position
+    
+    def update_lattice_data(self, lattice_centroid, radius):
+        self.lattice_data.append([lattice_centroid, radius])
+    
+    def update_obstacle_data(self, obstacle_coordinates,diameter):
+        self.obstacle_data.append([obstacle_coordinates, diameter])
+        
+    def generate_goal(self):
+        """
+        Generate a random point within a 2D rectangle defined by
+        (x_min, x_max) for x-coordinates and (y_min, y_max) for y-coordinates.
+        """
+        while True:
+            x = random.uniform(self.x_min, self.x_max)
+            y = random.uniform(self.y_min, self.y_max)
+            
+            if self.validity_of_goal([x,y]):
+                return x,y
+            else:
+                print("invalid goal generated")
+        
+    def validity_of_goal(self, goal):
+        for lattice_no in range(len(self.lattice_data)):
+            if dist([goal[X], goal[Y]], self.lattice_data[lattice_no][0]) < self.lattice_data[lattice_no][1]:
+                return False
+        for obstacle in self.obstacle_data:
+            if dist([goal[X], goal[Y]], obstacle[0]) < obstacle[1]:
+                return False
+            
+        return True
+        
+
+class Lattice:
     def __init__(self):
         self.clusters = []
         self.pseudo_lattice = []
@@ -87,9 +133,12 @@ class Lattice():
         print("pseudo lattice coordinates: ", self.pseudo_lattice)
         print("clusters: ", self.clusters)
                 
-class robot:
+class Robot:
     def __init__(self,no_of_bots): 
-        self.total_bots = no_of_bots 
+        self.observed_lattice_obj = Lattice()
+        self.robot_workspace = Workspace(no_of_bots, -6, 1, -6, 6)
+        self.total_bots = no_of_bots
+        self.goal_set = False 
         self.x = 0
         self.y = 0        
         self.incident_time = []           
@@ -104,10 +153,9 @@ class robot:
         self.bearing = [0]
         self.neigh = 0
         self.robot = []
-        self.bot_position = []
         self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
         self.initial_no = -1                      
-        self.goal = Point(8.0, 0.0, 0.0) #Giving fixed goal for now
+        self.goal = [None, None] #Giving fixed goal for now
         self.namespace = rospy.get_namespace()
         self.speed = Twist()
         self.hist = deque(maxlen=20)
@@ -121,18 +169,11 @@ class robot:
         # self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)
         
         self.obstacle_coordinates = []
-        self.lattice_centroids = []
         
-        self.observed_lattice_obj = Lattice()
         
-    def get_other_bot_position(self, msg):
-        self.bot_position = []
-        bot_info = msg.botpose
-        for i in range(len(msg.bot_id)):
-            position = bot_info[i].pose.pose.position
-            self.bot_position.append([position.x, position.y])
-            
-        
+
+    
+    """LOCALIZATION"""
     def update_Odom(self,odom):
         """ Odometry of current bot"""        
         self.x = odom.pose.pose.position.x 
@@ -143,6 +184,14 @@ class robot:
         self.odom = Pose2D(self.x,self.y,self.yaw)
         self.vel = Pose2D(odom.twist.twist.linear.x,odom.twist.twist.linear.y,odom.twist.twist.angular.z)
 
+    
+    """MAPPING""" 
+    def get_other_bot_position(self, msg):
+        bot_info = msg.botpose
+        for i in range(len(msg.bot_id)):
+            position = bot_info[i].pose.pose.position
+            self.robot_workspace.update_agent_location(i, [position.x, position.y])
+                
     def scanner(self,msg):       
         self.range = msg.ranges
         min_distance = min(self.range)
@@ -221,7 +270,6 @@ class robot:
             if distance < tolerance:
                 return True  # The point is too close, treat it as a duplicate
         return False  # The point is far enough to be considered unique
-
     
     def process_scanner_data(self,msg):
         # Threshold limit to consider as an obstacle (in meters)
@@ -245,27 +293,27 @@ class robot:
                 obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
                 obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
                 obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3))
-                if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1) and not self.is_within_tolerance(obstacle_coordinate, self.bot_position, 0.5):
+                if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1) and not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.5):
+                    # print(obstacle_coordinate)
                     self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
+                    self.robot_workspace.update_obstacle_data(obstacle_coordinate, obs_size_limit)
                     self.obstacle_coordinates.append(obstacle_coordinate)
                     # print("Obstacle_coordinates:", self.obstacle_coordinates)
-                # print("Obstacle mila")
-                
-            
 
 
+    """NAVIGATION"""
     def compute_avoidance_velocity(self, robot_position, robot_yaw, avoidance_radius, linear_velocity, angular_velocity, max_angular_velocity=1.0):
         """
         Adjusts the robot's velocity to avoid clusters based on proximity.
         """
         repulsion_vector = np.array([0.0, 0.0])
         # print("\n")
-        # print(self.lattice_centroids)
+        # print(self.robot_workspace.lattice_data)
         # print(robot_position)
         # print(robot_yaw)
         # print(linear_velocity)
         # print(angular_velocity)
-        for centroid in self.lattice_centroids:
+        for centroid,radius in self.robot_workspace.lattice_data:
             # Calculate distance from the robot to the cluster centroid
             distance_to_centroid = dist(robot_position, centroid)
             
@@ -297,13 +345,10 @@ class robot:
             else:
                 # Handle scalar linear velocity
                 adjusted_linear_velocity = linear_velocity * max(0, 1 - (np.linalg.norm(repulsion_vector) / avoidance_radius))
-            # print(adjusted_linear_velocity, adjusted_angular_velocity)
             return adjusted_linear_velocity, adjusted_angular_velocity
-        # print(linear_velocity, angular_velocity)
         # No obstacles nearby, proceed with given velocities
         return linear_velocity, angular_velocity
         
-
     def navigate_near_obstacle(self, robot_position):
         """funct to follow wall boundary
         Turn Right by default or rotate on CCW fashion"""
@@ -314,7 +359,7 @@ class robot:
         
         closest_distance = float('inf')
         
-        for centroid in self.lattice_centroids:
+        for centroid,radius in self.robot_workspace.lattice_data:
             distance = dist(centroid, robot_position)
             if distance < closest_distance:
                 closest_distance = distance
@@ -323,17 +368,13 @@ class robot:
             if min(self.range[0:deg]) <= dst or min(self.range[(359-deg):]) <= dst: # front wall
                 self.speed.angular.z = -0.2
                 self.speed.linear.x = 0.0
-                print("Front wall")
             elif min(self.range[deg:120]) < dst: # left wall 
                 self.speed.angular.z = 0.0
                 self.speed.linear.x = 0.2
-                print("Left wall")
             elif min(self.range[(359-120):(359-deg)]) < dst: # right wall
                 self.speed.angular.z = 0.0
                 self.speed.linear.x = -0.2
-                print("Right wall")
             else:
-                print("avoidance vel computed")
                 robot_speed, robot_angular_velocity = self.compute_avoidance_velocity(
                     (self.odom.x, self.odom.y),
                     (self.yaw),
@@ -345,7 +386,6 @@ class robot:
                 self.speed.linear.y = robot_speed[1]
                 self.speed.angular.z = robot_angular_velocity
         else:
-            print("avoidance vel computed")
             robot_speed, robot_angular_velocity = self.compute_avoidance_velocity(
                 (self.odom.x, self.odom.y),
                 (self.yaw),
@@ -361,11 +401,16 @@ class robot:
         """write code for identification based goal update of robot"""
         """If robot -> update goal
         If obstacle -> wall following"""
+        self.goal = self.robot_workspace.generate_goal()
+        print(self.goal)
+        self.goal_set = True
+        
 
     def controller(self,k):
-        self.set_goal()
-        self.incx = (self.goal.x - self.x)
-        self.incy = (self.goal.y - self.y)
+        if not self.goal_set:
+            self.set_goal()
+        self.incx = (self.goal[X] - self.x)
+        self.incy = (self.goal[Y] - self.y)
 
         # Bearing of bot
         self.bearing.append(atan2(self.incy,self.incx))
@@ -380,10 +425,12 @@ class robot:
             #No obstacle detected -> 
             self.speed.linear.x = 0.18
             self.speed.angular.z = K*np.sign(self.dtheta)
-            self.lattice_centroids = self.observed_lattice_obj.lattice_centroid
-            # self.form_lattice_structure()
+            default_lattice_radius = self.observed_lattice_obj.lattice_length/sqrt(3)
+            for centroid in self.observed_lattice_obj.lattice_centroid:
+                self.robot_workspace.update_lattice_data(centroid, default_lattice_radius)
             robot_position = [self.odom.x, self.odom.y]
             obstacle_avoidance_distance = 2 #2meters
+            
             for obstacle_coordinate in self.obstacle_coordinates:
                 if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
                     self.navigate_near_obstacle(robot_position)
@@ -391,14 +438,19 @@ class robot:
             self.speed.linear.x = 0
             self.speed.linear.y = 0
             self.speed.angular.z = 0
-            print("GOAAAAAAAAAAAAAAAAAALLLLLLLLLLLLLLLL REEEEEEEEEEEEEAAAAAAAAAAAAAAAACCCCCCCCCCCCCCHHHHHHHHHHHHHHHHHEEEEEEEEEEEEEEEEEDDDDDDDDDDDDDDD")  
+            self.goal_set = False
+            print("Goal Reached")  
             # #Robot Near -> 
             # t = rospy.get_time()
             # self.speed.linear.x = max((0.18 -(5000-t)*0.0001),0)                    
             # self.speed.angular.z = K*np.sign(self.dtheta)- 0.866*np.sign(self.delij[i])
 
         self.cmd_vel.publish(self.speed)
-        self.pubg.publish(self.goal)
+        point = Point()
+        point.x = self.goal[X]
+        point.y = self.goal[Y]
+        point.z = 0        
+        self.pubg.publish(point)
 
 if __name__ == '__main__':
     rospy.init_node("obstacle_controller")
@@ -406,7 +458,7 @@ if __name__ == '__main__':
     k = 0
     l = [] #l is time
     rate = rospy.Rate(4)
-    bot_1 = robot(1)
+    bot_1 = Robot(3)
     # bot_2 = robot(1)     
     rospy.sleep(6)
     # bot.set_goal()
