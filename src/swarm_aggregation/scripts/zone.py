@@ -31,25 +31,44 @@ class Workspace:
     def update_agent_location(self, id, bot_position):
         self.agents_location[id] = bot_position
     
-    def update_lattice_data(self, lattice_centroid, radius):
-        self.lattice_data.append([lattice_centroid, radius])
+    def update_lattice_data(self, lattice_centroids, radii): ##Very inefficient
+        self.lattice_data = []
+        for centroid in lattice_centroids:
+            self.lattice_data.append([centroid, radii])
     
     def update_obstacle_data(self, obstacle_coordinates,diameter):
         self.obstacle_data.append([obstacle_coordinates, diameter])
-        
-    def generate_goal(self):
+
+    def get_robot_id_at(self, coordinate):
+        for robot_id, location in enumerate(self.agents_location):
+            if self.is_within_tolerance(coordinate, location, 0.5):  # Use the same tolerance as detection
+                return robot_id
+        return None
+    
+    def is_within_tolerance(self, new_point, obstacle, tolerance):
+        distance = dist(new_point, obstacle)  # Use Euclidean distance
+        if distance < tolerance:
+            return True  # The point is too close, treat it as a duplicate
+        return False  # The point is far enough to be considered unique
+
+    def generate_goal(self, goal_coordinates = [None,None]):
         """
         Generate a random point within a 2D rectangle defined by
         (x_min, x_max) for x-coordinates and (y_min, y_max) for y-coordinates.
+        If goal point not provided
         """
         while True:
-            x = random.uniform(self.x_min, self.x_max)
-            y = random.uniform(self.y_min, self.y_max)
-            
+            if all(coord is not None for coord in goal_coordinates):
+                # Both goal_coordinates are provided
+                x = goal_coordinates[X]
+                y = goal_coordinates[Y]
+            else:
+                x = random.uniform(self.x_min, self.x_max)
+                y = random.uniform(self.y_min, self.y_max)
             if self.validity_of_goal([x,y]):
                 return x,y
             else:
-                print("invalid goal generated")
+                print("invalid goal")
         
     def validity_of_goal(self, goal):
         for lattice_no in range(len(self.lattice_data)):
@@ -58,16 +77,14 @@ class Workspace:
         for obstacle in self.obstacle_data:
             if dist([goal[X], goal[Y]], obstacle[0]) < obstacle[1]:
                 return False
-            
         return True
         
-
 class Lattice:
     def __init__(self):
         self.clusters = []
         self.pseudo_lattice = []
         self.lattice_centroid = []
-        self.lattice_length = 1.6211
+        self.lattice_length = 1.3211
         self.length_error = 0.4
         
         
@@ -75,7 +92,7 @@ class Lattice:
         if (len(self.pseudo_lattice) < 1):
             self.cluster_points(obstacle_2d_data)
         else:
-            if not self.check_pseudo_lattice_match(obstacle_2d_data, 0.1):
+            if not self.check_pseudo_lattice_match(obstacle_2d_data, 0.5):
                 self.cluster_points(obstacle_2d_data)
     
     def check_pseudo_lattice_match(self, obstacle_2d_data, error):
@@ -85,6 +102,8 @@ class Lattice:
                     print("Badhai ho lattice mil gya!")
                     lattice_cluster = [False, cluster[0], cluster[1], obstacle_2d_data]
                     self.form_triangle_lattice(lattice_cluster)
+                    # print (lattice_cluster)
+                    
                     return True
         return False
              
@@ -112,7 +131,7 @@ class Lattice:
     def form_triangle_lattice(self, cluster):
         if not cluster[0]:
             centroid_of_lattice = np.mean(cluster[1:], axis=0)
-            self.lattice_centroid.append(centroid_of_lattice)
+            self.lattice_centroid.append(centroid_of_lattice.tolist())
     
     def form_pseudo_triangle_lattice(self, cluster):
         if not cluster[0]:
@@ -134,13 +153,14 @@ class Lattice:
         print("clusters: ", self.clusters)
                 
 class Robot:
-    def __init__(self,no_of_bots): 
+    def __init__(self,robot_id, no_of_bots): 
         self.observed_lattice_obj = Lattice()
-        self.robot_workspace = Workspace(no_of_bots, -6, 1, -6, 6)
+        self.robot_workspace = Workspace(no_of_bots, -1, 6, -5, 6)
         self.total_bots = no_of_bots
         self.goal_set = False 
         self.x = 0
-        self.y = 0        
+        self.y = 0
+        self.am_I_in_danger = False        
         self.incident_time = []           
         self.yaw = 0
         self.range = [0]
@@ -153,9 +173,10 @@ class Robot:
         self.bearing = [0]
         self.neigh = 0
         self.robot = []
+        self.robot_id = robot_id
         self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
         self.initial_no = -1                      
-        self.goal = [None, None] #Giving fixed goal for now
+        self.goal = [-1.2, 4.8] #Giving fixed goal for now
         self.namespace = rospy.get_namespace()
         self.speed = Twist()
         self.hist = deque(maxlen=20)
@@ -169,9 +190,6 @@ class Robot:
         # self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)
         
         self.obstacle_coordinates = []
-        
-        
-
     
     """LOCALIZATION"""
     def update_Odom(self,odom):
@@ -190,6 +208,7 @@ class Robot:
         bot_info = msg.botpose
         for i in range(len(msg.bot_id)):
             position = bot_info[i].pose.pose.position
+            # print(i, position)
             self.robot_workspace.update_agent_location(i, [position.x, position.y])
                 
     def scanner(self,msg):       
@@ -264,12 +283,15 @@ class Robot:
         return median_array, edge_points_array
         
     def is_within_tolerance(self, new_point, obstacles, tolerance):
+        if len(obstacles) == 0:
+            return False
         # Check if any point in obstacles is within tolerance of new_point
-        for existing_point in obstacles:
-            distance = dist(new_point, existing_point)  # Use Euclidean distance
-            if distance < tolerance:
-                return True  # The point is too close, treat it as a duplicate
-        return False  # The point is far enough to be considered unique
+        else:
+            for existing_point in obstacles:
+                distance = dist(new_point, existing_point)  # Use Euclidean distance
+                if distance < tolerance:
+                    return True  # The point is too close, treat it as a duplicate
+            return False  # The point is far enough to be considered unique
     
     def process_scanner_data(self,msg):
         # Threshold limit to consider as an obstacle (in meters)
@@ -278,27 +300,51 @@ class Robot:
         distances = []
         angles = []
         distance_angle_pairs = []
+        obstacles_found = False
         # Iterate through laser scan ranges and print angles where distance < limit
         for angle, distance in enumerate(msg.ranges):
             if distance < R_max:
+                obstacles_found = True
                 distances.append(distance)
                 angles.append(angle)
                 distance_angle_pairs.append((round(distance, 4), angle))
-        rounded_distances = np.round(distances, 4).tolist()
-        median_obstacle_distance_list, edge_points_list = self.get_medians_and_edge_with_angle(distance_angle_pairs, 0.1,2)
-        median_obstacle_distance_indices_list = [rounded_distances.index(val) for val in median_obstacle_distance_list]
-        edge_points_indices_list = [rounded_distances.index(val[0]) for val in edge_points_list]
-        for enum, index in enumerate(median_obstacle_distance_indices_list):
-            if ((rounded_distances[index]*tan(radians(abs(angles[index] - angles[edge_points_indices_list[enum]])))) < obs_size_limit):
-                obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
-                obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
-                obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3))
-                if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1) and not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.5):
-                    # print(obstacle_coordinate)
-                    self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
-                    self.robot_workspace.update_obstacle_data(obstacle_coordinate, obs_size_limit)
-                    self.obstacle_coordinates.append(obstacle_coordinate)
-                    # print("Obstacle_coordinates:", self.obstacle_coordinates)
+            else:
+                obstacles_found = False
+        ##If obstacles are found then clean the data, check it with previous data of obstacles and compare it with other agent positions to prevent false alarms 
+        if (obstacles_found):
+            self.am_I_in_danger = True
+            rounded_distances = np.round(distances, 4).tolist()
+            median_obstacle_distance_list, edge_points_list = self.get_medians_and_edge_with_angle(distance_angle_pairs, 0.1,2)
+            median_obstacle_distance_indices_list = [rounded_distances.index(val) for val in median_obstacle_distance_list]
+            edge_points_indices_list = [rounded_distances.index(val[0]) for val in edge_points_list]
+            for enum, index in enumerate(median_obstacle_distance_indices_list):
+                if ((rounded_distances[index]*tan(radians(abs(angles[index] - angles[edge_points_indices_list[enum]])))) < obs_size_limit):
+                    obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
+                    obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
+                    obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3))
+                    ##Is a new obstacle observed?
+                    if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1): 
+                        if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 1):
+                            self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
+                            self.robot_workspace.update_obstacle_data(obstacle_coordinate, obs_size_limit)
+                            default_lattice_radius = self.observed_lattice_obj.lattice_length/sqrt(3)
+                            self.robot_workspace.update_lattice_data(self.observed_lattice_obj.lattice_centroid, default_lattice_radius)
+                            if not self.robot_workspace.validity_of_goal(self.goal):
+                                self.robot_workspace.generate_goal()
+                            self.obstacle_coordinates.append(obstacle_coordinate)
+                            # print(obstacle_coordinate)
+                            # print(self.robot_workspace.agents_location)
+                        else:
+                            # Check and print the robot ID
+                            self.am_I_in_danger = False
+                            robot_id = self.robot_workspace.get_robot_id_at(obstacle_coordinate)
+                            if robot_id is not None:
+                                print(f"Ayyyyyyy robot detected! Robot ID: {robot_id}")
+                            else:
+                                print("Ayyyyyyy robot detected, but ID not found!")
+                        # print("Obstacle_coordinates:", self.obstacle_coordinates)
+        else:
+            self.am_I_in_danger = False
 
 
     """NAVIGATION"""
@@ -371,9 +417,9 @@ class Robot:
             elif min(self.range[deg:120]) < dst: # left wall 
                 self.speed.angular.z = 0.0
                 self.speed.linear.x = 0.2
-            elif min(self.range[(359-120):(359-deg)]) < dst: # right wall
-                self.speed.angular.z = 0.0
-                self.speed.linear.x = -0.2
+            # elif min(self.range[(359-120):(359-deg)]) < dst: # right wall
+            #     self.speed.angular.z = 0.0
+            #     self.speed.linear.x = -0.2
             else:
                 robot_speed, robot_angular_velocity = self.compute_avoidance_velocity(
                     (self.odom.x, self.odom.y),
@@ -402,15 +448,30 @@ class Robot:
         """If robot -> update goal
         If obstacle -> wall following"""
         self.goal = self.robot_workspace.generate_goal()
-        print(self.goal)
         self.goal_set = True
         
-
+    # def cluster_behavior(self):
+        #Find neighbor
+        #Neighbor found
+        #Generate goal
+            #Is goal valid
+            #nope
+        #Remove neighbor
+        
     def controller(self,k):
-        if not self.goal_set:
-            self.set_goal()
+        if not self.am_I_in_danger:
+            print("Not in Danger")
+            ##IF friend assigned
+            print("Will go towards friends")
+            ##Else
+            print("Setting goal")
+        else:
+            if not self.goal_set:
+                self.set_goal()
         self.incx = (self.goal[X] - self.x)
         self.incy = (self.goal[Y] - self.y)
+
+        
 
         # Bearing of bot
         self.bearing.append(atan2(self.incy,self.incx))
@@ -425,9 +486,7 @@ class Robot:
             #No obstacle detected -> 
             self.speed.linear.x = 0.18
             self.speed.angular.z = K*np.sign(self.dtheta)
-            default_lattice_radius = self.observed_lattice_obj.lattice_length/sqrt(3)
-            for centroid in self.observed_lattice_obj.lattice_centroid:
-                self.robot_workspace.update_lattice_data(centroid, default_lattice_radius)
+            
             robot_position = [self.odom.x, self.odom.y]
             obstacle_avoidance_distance = 2 #2meters
             
@@ -458,8 +517,8 @@ if __name__ == '__main__':
     k = 0
     l = [] #l is time
     rate = rospy.Rate(4)
-    bot_1 = Robot(3)
-    # bot_2 = robot(1)     
+    bot_1 = Robot(1, 2)
+    # bot_2 = Robot(2, 2)     
     rospy.sleep(6)
     # bot.set_goal()
     while not rospy.is_shutdown() and k < 500000:
