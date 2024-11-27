@@ -62,13 +62,14 @@ class Workspace:
                 # Both goal_coordinates are provided
                 x = goal_coordinates[X]
                 y = goal_coordinates[Y]
+                return x,y
             else:
                 x = random.uniform(self.x_min, self.x_max)
                 y = random.uniform(self.y_min, self.y_max)
             if self.validity_of_goal([x,y]):
                 return x,y
-            else:
-                print("invalid goal")
+            # else:
+                # print("invalid goal")
         
     def validity_of_goal(self, goal):
         for lattice_no in range(len(self.lattice_data)):
@@ -153,9 +154,12 @@ class Lattice:
         print("clusters: ", self.clusters)
                 
 class Robot:
-    def __init__(self,robot_id, no_of_bots): 
+    def __init__(self,no_of_bots):
+        self.agent_detected = False 
+        self.moving_towards_cluster = False
+        self.detected_agent_coordinates = [None, None]
         self.observed_lattice_obj = Lattice()
-        self.robot_workspace = Workspace(no_of_bots, -1, 6, -5, 6)
+        self.robot_workspace = Workspace(no_of_bots, -1, 8, -5, 6)
         self.total_bots = no_of_bots
         self.goal_set = False 
         self.x = 0
@@ -173,16 +177,16 @@ class Robot:
         self.bearing = [0]
         self.neigh = 0
         self.robot = []
-        self.robot_id = robot_id
         self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
         self.initial_no = -1                      
-        self.goal = [-1.2, 4.8] #Giving fixed goal for now
+        self.goal = [7, 1] #Giving fixed goal for now
         self.namespace = rospy.get_namespace()
+        scan_topic = self.namespace + "scan"
         self.speed = Twist()
         self.hist = deque(maxlen=20)
         self.odom_sub = rospy.Subscriber("/odom",Odometry,self.update_Odom)
         self.bot_data = rospy.Subscriber("/obs_data", botPose, self.get_other_bot_position) 
-        self.object_detector = rospy.Subscriber('/scan',LaserScan, self.scanner)
+        self.object_detector = rospy.Subscriber(scan_topic,LaserScan, self.scanner)
 
         self.cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=1)    
         self.pubg = rospy.Publisher('/goal', Point, queue_size=1)
@@ -193,7 +197,7 @@ class Robot:
     
     """LOCALIZATION"""
     def update_Odom(self,odom):
-        """ Odometry of current bot"""        
+        """ Odometry of current bot"""       
         self.x = odom.pose.pose.position.x 
         self.y = odom.pose.pose.position.y
         self.rot_q = odom.pose.pose.orientation
@@ -211,7 +215,8 @@ class Robot:
             # print(i, position)
             self.robot_workspace.update_agent_location(i, [position.x, position.y])
                 
-    def scanner(self,msg):       
+    def scanner(self,msg):
+           
         self.range = msg.ranges
         min_distance = min(self.range)
         self.ang_max = msg.angle_max
@@ -300,7 +305,10 @@ class Robot:
         distances = []
         angles = []
         distance_angle_pairs = []
+        self.detected_agent_coordinates = [None, None]
         obstacles_found = False
+        self.agent_detected = False
+
         # Iterate through laser scan ranges and print angles where distance < limit
         for angle, distance in enumerate(msg.ranges):
             if distance < R_max:
@@ -308,11 +316,11 @@ class Robot:
                 distances.append(distance)
                 angles.append(angle)
                 distance_angle_pairs.append((round(distance, 4), angle))
-            else:
-                obstacles_found = False
+          
+        # print("ROBOT NUMBER:",self.robot_id)
         ##If obstacles are found then clean the data, check it with previous data of obstacles and compare it with other agent positions to prevent false alarms 
         if (obstacles_found):
-            self.am_I_in_danger = True
+            # self.am_I_in_danger = True
             rounded_distances = np.round(distances, 4).tolist()
             median_obstacle_distance_list, edge_points_list = self.get_medians_and_edge_with_angle(distance_angle_pairs, 0.1,2)
             median_obstacle_distance_indices_list = [rounded_distances.index(val) for val in median_obstacle_distance_list]
@@ -321,10 +329,10 @@ class Robot:
                 if ((rounded_distances[index]*tan(radians(abs(angles[index] - angles[edge_points_indices_list[enum]])))) < obs_size_limit):
                     obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
                     obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
-                    obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3))
+                    obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3)) 
                     ##Is a new obstacle observed?
                     if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1): 
-                        if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 1):
+                        if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.3):
                             self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
                             self.robot_workspace.update_obstacle_data(obstacle_coordinate, obs_size_limit)
                             default_lattice_radius = self.observed_lattice_obj.lattice_length/sqrt(3)
@@ -336,15 +344,15 @@ class Robot:
                             # print(self.robot_workspace.agents_location)
                         else:
                             # Check and print the robot ID
-                            self.am_I_in_danger = False
+                            # self.am_I_in_danger = False
                             robot_id = self.robot_workspace.get_robot_id_at(obstacle_coordinate)
                             if robot_id is not None:
-                                print(f"Ayyyyyyy robot detected! Robot ID: {robot_id}")
+                                # print(f"Ayyyyyyy robot detected! Robot ID: {robot_id}")
+                                self.agent_detected = True
+                                self.detected_agent_coordinates = self.robot_workspace.agents_location[robot_id]
                             else:
                                 print("Ayyyyyyy robot detected, but ID not found!")
                         # print("Obstacle_coordinates:", self.obstacle_coordinates)
-        else:
-            self.am_I_in_danger = False
 
 
     """NAVIGATION"""
@@ -458,16 +466,36 @@ class Robot:
             #nope
         #Remove neighbor
         
+    def is_cluster_possible(self, clustering_goal):
+        #Todo: Is the agent also seeing me?
+        
+        #Is the goal in valid workspace?
+        if not self.robot_workspace.validity_of_goal(clustering_goal):
+            return False
+        return True
+        
     def controller(self,k):
-        if not self.am_I_in_danger:
-            print("Not in Danger")
-            ##IF friend assigned
-            print("Will go towards friends")
-            ##Else
-            print("Setting goal")
-        else:
-            if not self.goal_set:
-                self.set_goal()
+        # if not self.am_I_in_danger:
+        #     print("Not in Danger")
+        #     ##IF friend assigned
+        #     print("Will go towards friends")
+        #     ##Else
+        #     print("Setting goal")
+        # else:
+        if self.agent_detected and not self.moving_towards_cluster:
+            clustering_goal = [(self.x + self.detected_agent_coordinates[X])/2, (self.y + self.detected_agent_coordinates[Y])/2] 
+            # if not self.is_cluster_possible(clustering_goal):
+            #     print("Not moving towards cluster")
+            #     self.set_goal()
+            #     self.moving_towards_cluster = False
+            # else:
+            # print("moving towards cluster")
+            self.goal = self.robot_workspace.generate_goal(clustering_goal)
+            self.goal_set = True
+            print("Agent name",self.namespace, " and its Defined goal", self.goal)
+            self.moving_towards_cluster = True
+        if not self.goal_set:
+            self.set_goal()
         self.incx = (self.goal[X] - self.x)
         self.incy = (self.goal[Y] - self.y)
 
@@ -481,7 +509,7 @@ class Robot:
         
         # Gradient of Bearing
         self.dtheta = (self.bearing[k] - self.bearing[k-1])/h
-        if (self.dis_err) >= 0.850:
+        if (self.dis_err) >= 0.20:
             """write code to control movement of robots based on conditions satisfied"""
             #No obstacle detected -> 
             self.speed.linear.x = 0.18
@@ -498,7 +526,9 @@ class Robot:
             self.speed.linear.y = 0
             self.speed.angular.z = 0
             self.goal_set = False
-            print("Goal Reached")  
+            self.moving_towards_cluster = False
+            print("Goal Reached")
+            print("My position:", self.x, self.y)  
             # #Robot Near -> 
             # t = rospy.get_time()
             # self.speed.linear.x = max((0.18 -(5000-t)*0.0001),0)                    
@@ -517,7 +547,7 @@ if __name__ == '__main__':
     k = 0
     l = [] #l is time
     rate = rospy.Rate(4)
-    bot_1 = Robot(1, 2)
+    bot_1 = Robot(12)
     # bot_2 = Robot(2, 2)     
     rospy.sleep(6)
     # bot.set_goal()
