@@ -159,7 +159,7 @@ class Robot:
         self.moving_towards_cluster = False
         self.detected_agent_coordinates = [None, None]
         self.observed_lattice_obj = Lattice()
-        self.robot_workspace = Workspace(no_of_bots, -1, 8, -5, 6)
+        self.robot_workspace = Workspace(no_of_bots, -10, 15, -13, 16)
         self.total_bots = no_of_bots
         self.goal_set = False 
         self.x = 0
