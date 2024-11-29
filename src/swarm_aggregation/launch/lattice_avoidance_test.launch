@@ -27,7 +27,7 @@
   <arg name="fourth_tb3_z_pos" default=" 0.0"/>
   <arg name="fourth_tb3_yaw"   default=" 1.23"/>
 
-  <arg name="fifth_tb3_x_pos" default=" -5.0"/>
+  <arg name="fifth_tb3_x_pos" default=" -7.0"/>
   <arg name="fifth_tb3_y_pos" default=" -2.0"/>
   <arg name="fifth_tb3_z_pos" default=" 0.0"/>
   <arg name="fifth_tb3_yaw"   default=" 1.18"/>
@@ -41,7 +41,7 @@
 
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
     <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/blank_world.world"/> -->
-    <arg name="world_name" value="$(find swarm_aggregation)/worlds/Only_triangle_lattices.world"/>
+    <arg name="world_name" value="$(find swarm_aggregation)/worlds/only_triangle_lattices_v2.world"/>
     <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_three_lattice_structures.world"/>  -->
     <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_two_lattice_structures_with_end_pillar_enclosed_in_a_medium_room.world"/>  -->
     <arg name="paused" value="true"/>

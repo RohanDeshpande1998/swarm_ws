@@ -61,19 +61,20 @@ class Workspace:
                 # Both goal_coordinates are provided
                 x = goal_coordinates[X]
                 y = goal_coordinates[Y]
-                return x,y
             else:
                 x = random.uniform(self.x_min, self.x_max)
                 y = random.uniform(self.y_min, self.y_max)
             if self.validity_of_goal([x,y]):
                 return x,y
-            # else:
-                # print("invalid goal")
+            else:
+                print("invalid goal")
+                goal_coordinates = [None, None]
         
     def validity_of_goal(self, goal):
-        for lattice_no in range(len(self.lattice_data)):
-            if dist([goal[X], goal[Y]], self.lattice_data[lattice_no][0]) < self.lattice_data[lattice_no][1]:
-                return False
+        if len(self.lattice_data) != 0:    
+            for lattice_no in range(len(self.lattice_data)):
+                if dist([goal[X], goal[Y]], self.lattice_data[lattice_no][0]) < self.lattice_data[lattice_no][1]:
+                    return False
         for obstacle in self.obstacle_data:
             if dist([goal[X], goal[Y]], obstacle[0]) < obstacle[1]:
                 return False
@@ -160,7 +161,7 @@ class Robot:
         self.robot_workspace = Workspace(no_of_bots, -8, 4, 3, 4)
         self.total_bots = no_of_bots
         self.neighbour_array = []
-        self.goal_set = True 
+        self.goal_set = False 
         self.x = 0
         self.y = 0
         self.am_I_in_danger = False        
@@ -448,15 +449,7 @@ class Robot:
         If obstacle -> wall following"""
         self.goal = self.robot_workspace.generate_goal()
         self.goal_set = True
-        
-        
-    def is_cluster_possible(self, clustering_goal):
-        #Todo: Is the agent also seeing me?
-        
-        #Is the goal in valid workspace?
-        if not self.robot_workspace.validity_of_goal(clustering_goal):
-            return False
-        return True
+
         
     def controller(self,k):
         # print("My name:",self.namespace)
@@ -467,15 +460,22 @@ class Robot:
         # print(self.neighbour_array)
         # print("For agent: ", self.namespace)
         # print(self.goal)
-
-        if len(self.neighbour_array) == 0:    
+        robot_position = [self.odom.x, self.odom.y]
+        obstacle_avoidance_distance = 2 #2meters
+        for obstacle_coordinate in self.obstacle_coordinates:
+            if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
+                obstacle_nearby = True
+            else:
+                obstacle_nearby = False
+        
+        if len(self.neighbour_array) == 0 or obstacle_nearby:    
             if not self.goal_set:
                 self.set_goal()
                 print("Random Goal set:", self.goal)
         else:
             x = self.x
             y = self.y
-            for index, coords in enumerate(self.neighbour_array):
+            for coords in self.neighbour_array:
                 x += coords[X]
                 y += coords[Y]
             
@@ -499,6 +499,8 @@ class Robot:
         
         # Gradient of Bearing
         self.dtheta = (self.bearing[k] - self.bearing[k-1])/h
+        
+        
         if (self.dis_err) <= 0.50:
             self.goal_set = False
             if len(self.neighbour_array)>=MINIMUM_NEIGHBOURS:
@@ -510,9 +512,6 @@ class Robot:
             # print("Moving towards goal")
             self.speed.linear.x = 0.18
             self.speed.angular.z = K*np.sign(self.dtheta)
-            
-            robot_position = [self.odom.x, self.odom.y]
-            obstacle_avoidance_distance = 2 #2meters
             
             for obstacle_coordinate in self.obstacle_coordinates:
                 if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
