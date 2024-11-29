@@ -4,7 +4,6 @@ import statistics
 from geometry_msgs.msg import Point, Twist, Pose2D
 from sensor_msgs.msg import LaserScan
 import numpy as np
-from sklearn import cluster
 from collections import deque
 from math import * 
 from swarm_aggregation.msg import botPose
@@ -158,7 +157,7 @@ class Robot:
         self.agent_detected = False 
         self.moving_towards_cluster = False
         self.observed_lattice_obj = Lattice()
-        self.robot_workspace = Workspace(no_of_bots, -10, 15, -13, 16)
+        self.robot_workspace = Workspace(no_of_bots, -8, 4, 3, 4)
         self.total_bots = no_of_bots
         self.neighbour_array = []
         self.goal_set = True 
@@ -318,10 +317,8 @@ class Robot:
                 angles.append(angle)
                 distance_angle_pairs.append((round(distance, 4), angle))
           
-        # print("ROBOT NUMBER:",self.robot_id)
         ##If obstacles are found then clean the data, check it with previous data of obstacles and compare it with other agent positions to prevent false alarms 
         if (obstacles_found):
-            # self.am_I_in_danger = True
             rounded_distances = np.round(distances, 4).tolist()
             median_obstacle_distance_list, edge_points_list = self.get_medians_and_edge_with_angle(distance_angle_pairs, 0.1,2)
             median_obstacle_distance_indices_list = [rounded_distances.index(val) for val in median_obstacle_distance_list]
@@ -345,17 +342,12 @@ class Robot:
                             # print(self.robot_workspace.agents_location)
                         else:
                             # Check and print the robot ID
-                            # self.am_I_in_danger = False
                             robot_id = self.robot_workspace.get_robot_id_at(obstacle_coordinate)
                             if robot_id is not None:
                                 # print(f"Ayyyyyyy robot detected! Robot ID: {robot_id}")
                                 self.agent_detected = True
                                 if not self.is_within_tolerance(self.robot_workspace.agents_location[robot_id], self.neighbour_array, 0.3):
                                     self.neighbour_array.append(self.robot_workspace.agents_location[robot_id])
-                                # print("I AM:",self.namespace)
-                                # print("Things around me are:", len(self.neighbour_array))
-                                # print(self.neighbour_array)
-                                # print("\n")
                             else:
                                 print("Ayyyyyyy robot detected, but ID not found!")
                         # print("Obstacle_coordinates:", self.obstacle_coordinates)
@@ -367,12 +359,6 @@ class Robot:
         Adjusts the robot's velocity to avoid clusters based on proximity.
         """
         repulsion_vector = np.array([0.0, 0.0])
-        # print("\n")
-        # print(self.robot_workspace.lattice_data)
-        # print(robot_position)
-        # print(robot_yaw)
-        # print(linear_velocity)
-        # print(angular_velocity)
         for centroid,radius in self.robot_workspace.lattice_data:
             # Calculate distance from the robot to the cluster centroid
             distance_to_centroid = dist(robot_position, centroid)
@@ -382,7 +368,6 @@ class Robot:
                 direction_away = np.subtract(robot_position, centroid)
                 normalized_direction = direction_away / np.linalg.norm(direction_away)
                 repulsion_vector += normalized_direction * (avoidance_radius - distance_to_centroid)
-                # print(repulsion_vector)
         # If there is a repulsion vector, adjust velocities
         if np.linalg.norm(repulsion_vector) > 0:
             # Calculate desired angle to move away from cluster
