@@ -155,16 +155,12 @@ class Lattice:
                 
 class Robot:
     def __init__(self,no_of_bots):
-        self.agent_detected = False 
-        self.moving_towards_cluster = False
         self.observed_lattice_obj = Lattice()
         self.robot_workspace = Workspace(no_of_bots, -8, 4, 3, 4)
         self.total_bots = no_of_bots
         self.neighbour_array = []
-        self.goal_set = False 
         self.x = 0
-        self.y = 0
-        self.am_I_in_danger = False        
+        self.y = 0        
         self.incident_time = []           
         self.yaw = 0
         self.range = [0]
@@ -176,10 +172,9 @@ class Robot:
         self.delij = []             
         self.bearing = [0]
         self.neigh = 0
-        self.robot = []
-        self.safe_zone = [0,0,0] #May cause issues TODO: Change the initialization params
-        self.initial_no = -1                      
-        self.goal = [7, 1] #Giving fixed goal for now
+        self.robot = []          
+        self.goal = [7, 1] #Initial goal
+        self.goal_set = False #Set this to true if you want the agent(s) to go to initial self.goal
         self.namespace = rospy.get_namespace()
         scan_topic = self.namespace + "scan"
         self.speed = Twist()
@@ -217,7 +212,10 @@ class Robot:
             self.robot_workspace.update_agent_location(i, [position.x, position.y])
                 
     def scanner(self,msg):
-           
+        ranges_list = list(msg.ranges)
+        dq = deque(ranges_list[0:180] + [inf]*179)
+        dq.rotate(-90)  # code written for fov ranging from [0, 359] current range is [-90 90]
+        msg.ranges = list(dq)
         self.range = msg.ranges
         min_distance = min(self.range)
         self.ang_max = msg.angle_max
@@ -299,6 +297,21 @@ class Robot:
                     return True  # The point is too close, treat it as a duplicate
             return False  # The point is far enough to be considered unique
     
+    def wrap_around(self, value, lower_bound, upper_bound):
+        """
+        Wraps a value around if it goes out of the specified bounds.
+
+        Args:
+            value (int): The value to wrap around.
+            lower_bound (int): The inclusive lower bound of the range.
+            upper_bound (int): The exclusive upper bound of the range.
+
+        Returns:
+            int: The wrapped value within the specified bounds.
+        """
+        range_size = upper_bound - lower_bound
+        return (value - lower_bound) % range_size + lower_bound
+
     def process_scanner_data(self,msg):
         # Threshold limit to consider as an obstacle (in meters)
         R_max = 2
@@ -307,11 +320,10 @@ class Robot:
         angles = []
         distance_angle_pairs = []
         obstacles_found = False
-        self.agent_detected = False
         self.neighbour_array = []
-
         # Iterate through laser scan ranges and print angles where distance < limit
         for angle, distance in enumerate(msg.ranges):
+            # adjusted_angle = self.wrap_around(angle - 180, 0, 360)
             if distance < R_max:
                 obstacles_found = True
                 distances.append(distance)
@@ -319,6 +331,12 @@ class Robot:
                 distance_angle_pairs.append((round(distance, 4), angle))
           
         ##If obstacles are found then clean the data, check it with previous data of obstacles and compare it with other agent positions to prevent false alarms 
+        # if (self.namespace == "/tb3_1/"):
+        # print("Length of message:",len(msg.ranges));
+        # non_inf_count = sum(1 for x in msg.ranges if not isinf(x))
+        # print("Length of messages without inf:", non_inf_count)
+        # print(msg.ranges)
+
         if (obstacles_found):
             rounded_distances = np.round(distances, 4).tolist()
             median_obstacle_distance_list, edge_points_list = self.get_medians_and_edge_with_angle(distance_angle_pairs, 0.1,2)
@@ -330,6 +348,7 @@ class Robot:
                     obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
                     obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3)) 
                     ##Is a new obstacle observed?
+                    # print(obstacle_coordinate)
                     if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1): 
                         if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.3):
                             self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
@@ -339,14 +358,15 @@ class Robot:
                             if not self.robot_workspace.validity_of_goal(self.goal):
                                 self.robot_workspace.generate_goal()
                             self.obstacle_coordinates.append(obstacle_coordinate)
-                            # print(obstacle_coordinate)
+                            print(distance_angle_pairs)
+                            print("\n")
+                            print(obstacle_coordinate)
                             # print(self.robot_workspace.agents_location)
                         else:
                             # Check and print the robot ID
                             robot_id = self.robot_workspace.get_robot_id_at(obstacle_coordinate)
                             if robot_id is not None:
                                 # print(f"Ayyyyyyy robot detected! Robot ID: {robot_id}")
-                                self.agent_detected = True
                                 if not self.is_within_tolerance(self.robot_workspace.agents_location[robot_id], self.neighbour_array, 0.3):
                                     self.neighbour_array.append(self.robot_workspace.agents_location[robot_id])
                             else:
@@ -411,10 +431,10 @@ class Robot:
                 closest_distance = distance
         
         if (closest_distance > avoidance_radius):
-            if min(self.range[0:deg]) <= dst or min(self.range[(359-deg):]) <= dst: # front wall
+            if min(self.range[0:deg]) <= dst or min(self.range[(360-deg):]) <= dst: # front wall
                 self.speed.angular.z = -0.2
                 self.speed.linear.x = 0.0
-            elif min(self.range[deg:120]) < dst: # left wall 
+            elif min(self.range[deg:89]) < dst: # left wall 
                 self.speed.angular.z = 0.0
                 self.speed.linear.x = 0.2
             # elif min(self.range[(359-120):(359-deg)]) < dst: # right wall
