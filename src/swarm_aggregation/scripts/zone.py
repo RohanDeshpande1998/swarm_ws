@@ -67,7 +67,7 @@ class Workspace:
             if self.validity_of_goal([x,y]):
                 return x,y
             else:
-                print("invalid goal")
+                # print("invalid goal")
                 goal_coordinates = [None, None]
         
     def validity_of_goal(self, goal):
@@ -156,7 +156,7 @@ class Lattice:
 class Robot:
     def __init__(self,no_of_bots):
         self.observed_lattice_obj = Lattice()
-        self.robot_workspace = Workspace(no_of_bots, -8, 4, 3, 4)
+        self.robot_workspace = Workspace(no_of_bots, -8, 4, -3, 4)
         self.total_bots = no_of_bots
         self.neighbour_array = []
         self.x = 0
@@ -358,9 +358,9 @@ class Robot:
                             if not self.robot_workspace.validity_of_goal(self.goal):
                                 self.robot_workspace.generate_goal()
                             self.obstacle_coordinates.append(obstacle_coordinate)
-                            print(distance_angle_pairs)
-                            print("\n")
-                            print(obstacle_coordinate)
+                            # print(distance_angle_pairs)
+                            # print("\n")
+                            # print(obstacle_coordinate)
                             # print(self.robot_workspace.agents_location)
                         else:
                             # Check and print the robot ID
@@ -420,8 +420,8 @@ class Robot:
         Turn Right by default or rotate on CCW fashion"""
         # print("Wall following")
         deg = 30
-        dst = 1
-        avoidance_radius = 1
+        dst = 0.75
+        avoidance_radius = 1.5
         
         closest_distance = float('inf')
         
@@ -491,7 +491,7 @@ class Robot:
         if len(self.neighbour_array) == 0 or obstacle_nearby:    
             if not self.goal_set:
                 self.set_goal()
-                print("Random Goal set:", self.goal)
+                # print("Random Goal set:", self.goal)
         else:
             x = self.x
             y = self.y
@@ -520,14 +520,13 @@ class Robot:
         # Gradient of Bearing
         self.dtheta = (self.bearing[k] - self.bearing[k-1])/h
         
-        
-        if (self.dis_err) <= 0.50:
+        if (self.dis_err) <= 0.90:
             self.goal_set = False
             if len(self.neighbour_array)>=MINIMUM_NEIGHBOURS:
                 self.goal = [None, None]
             else:
                 self.set_goal()
-                
+        
         if all(coord is not None for coord in self.goal):
             # print("Moving towards goal")
             self.speed.linear.x = 0.18
@@ -541,7 +540,7 @@ class Robot:
             self.speed.linear.y = 0
             self.speed.angular.z = 0
             self.goal_set = False
-
+        
         self.cmd_vel.publish(self.speed)
         point = Point()
         point.x = self.goal[X]
