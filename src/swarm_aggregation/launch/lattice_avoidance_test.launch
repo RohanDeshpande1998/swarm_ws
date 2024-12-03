@@ -7,18 +7,18 @@
   <arg name="fifth_tb3"  default="tb3_5"/>
   <arg name="sixth_tb3"  default="tb3_6"/>
 
-  <arg name="first_tb3_x_pos" default=" -11.0"/>
-  <arg name="first_tb3_y_pos" default=" 4.0"/>
+  <arg name="first_tb3_x_pos" default=" -4.0"/>
+  <arg name="first_tb3_y_pos" default=" 3.0"/>
   <arg name="first_tb3_z_pos" default=" 0.0"/>
   <arg name="first_tb3_yaw"   default=" 0"/>
 
-  <arg name="second_tb3_x_pos" default=" -10.0"/>
-  <arg name="second_tb3_y_pos" default=" 1.0"/>
+  <arg name="second_tb3_x_pos" default=" 3.0"/>
+  <arg name="second_tb3_y_pos" default=" -4.0"/>
   <arg name="second_tb3_z_pos" default=" 0.0"/>
   <arg name="second_tb3_yaw"   default=" 0"/> 
 
-   <arg name="third_tb3_x_pos" default=" -11.0"/>
-  <arg name="third_tb3_y_pos" default=" -2.0"/>
+   <arg name="third_tb3_x_pos" default=" -4.0"/>
+  <arg name="third_tb3_y_pos" default=" -3.0"/>
   <arg name="third_tb3_z_pos" default=" 0.0"/>
   <arg name="third_tb3_yaw"   default=" 0.11"/>
 
@@ -40,10 +40,14 @@
   <!-- <arg name="first_tb3_yaw"   default=" 1.23"/>-->
 
   <include file="$(find gazebo_ros)/launch/empty_world.launch">
+    <!-- Worlds used during development-->
     <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/blank_world.world"/> -->
-    <arg name="world_name" value="$(find swarm_aggregation)/worlds/only_triangle_lattices_v2.world"/>
+    <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/only_triangle_lattices_v2.world"/> -->
     <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_three_lattice_structures.world"/>  -->
     <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_two_lattice_structures_with_end_pillar_enclosed_in_a_medium_room.world"/>  -->
+    
+    <!-- Worlds for publication-->
+    <arg name="world_name" value="$(find swarm_aggregation)/worlds/worlds_for_publications/with_three_lattices.world"/>
     <arg name="paused" value="true"/>
     <arg name="use_sim_time" value="true"/>
     <arg name="gui" value="true"/>

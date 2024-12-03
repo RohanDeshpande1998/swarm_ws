@@ -17,14 +17,22 @@ X = 0
 Y = 1
 MINIMUM_NEIGHBOURS = 1
 class Workspace:
-    def __init__(self, no_of_bots, x_min, x_max, y_min, y_max):
-        self.x_min = x_min
-        self.x_max = x_max
-        self.y_min = y_min
-        self.y_max = y_max
+    def __init__(self, no_of_bots):
+        #Danger Zone square
+        self.sqr_1_x_min = -7
+        self.sqr_1_x_max = -0.5
+        self.sqr_1_y_min = -3
+        self.sqr_1_y_max = 3
+        
+        #Safe Zone square
+        self.sqr_2_x_min = 1.5
+        self.sqr_2_x_max = 7.5
+        self.sqr_2_y_min = -5.5
+        self.sqr_2_y_max = 0
         self.goal = [None, None] 
         self.lattice_data = [] # Array containing list of (lattice_centroid, radius)
-        self.obstacle_data = [] # Array contaonong list of (obstacle_coordinates, diameter)
+        self.obstacle_data = [] # Array containing list of (obstacle_coordinates, diameter)
+        self.obstacle_coordinates = []
         self.agents_location = [None]*no_of_bots
         
     def update_agent_location(self, id, bot_position):
@@ -35,8 +43,9 @@ class Workspace:
         for centroid in lattice_centroids:
             self.lattice_data.append([centroid, radii])
     
-    def update_obstacle_data(self, obstacle_coordinates,diameter):
-        self.obstacle_data.append([obstacle_coordinates, diameter])
+    def update_obstacle_data(self, obstacle_coordinates_data,diameter):
+        self.obstacle_data.append([obstacle_coordinates_data, diameter])
+        self.obstacle_coordinates.append(obstacle_coordinates_data)
 
     def get_robot_id_at(self, coordinate):
         for robot_id, location in enumerate(self.agents_location):
@@ -56,14 +65,24 @@ class Workspace:
         (x_min, x_max) for x-coordinates and (y_min, y_max) for y-coordinates.
         If goal point not provided
         """
+        if random.randint(0,1):
+            x_min = self.sqr_1_x_min
+            x_max = self.sqr_1_x_max
+            y_min = self.sqr_1_y_min
+            y_max = self.sqr_1_y_max
+        else:
+            x_min = self.sqr_2_x_min
+            x_max = self.sqr_2_x_max
+            y_min = self.sqr_2_y_min
+            y_max = self.sqr_2_y_max
         while True:
             if all(coord is not None for coord in goal_coordinates):
                 # Both goal_coordinates are provided
                 x = goal_coordinates[X]
                 y = goal_coordinates[Y]
             else:
-                x = random.uniform(self.x_min, self.x_max)
-                y = random.uniform(self.y_min, self.y_max)
+                x = random.uniform(x_min, x_max)
+                y = random.uniform(y_min, y_max)
             if self.validity_of_goal([x,y]):
                 return x,y
             else:
@@ -82,81 +101,75 @@ class Workspace:
         
 class Lattice:
     def __init__(self):
-        self.clusters = []
+        self.points = []  # List of previously received points
+        self.lattice_length = 1.5
+        self.distance_tolerance = 0.2
         self.pseudo_lattice = []
         self.lattice_centroid = []
-        self.lattice_length = 1.3211
-        self.length_error = 0.4
-        
-        
+             
     def process_new_data_point(self, obstacle_2d_data):
-        if (len(self.pseudo_lattice) < 1):
-            self.cluster_points(obstacle_2d_data)
-        else:
-            if not self.check_pseudo_lattice_match(obstacle_2d_data, 0.5):
-                self.cluster_points(obstacle_2d_data)
+        if (len(self.pseudo_lattice)>0):
+            self.check_pseudo_lattice_match(obstacle_2d_data, 0.2)
+        self.cluster_points(obstacle_2d_data)
     
     def check_pseudo_lattice_match(self, obstacle_2d_data, error):
         for cluster in self.pseudo_lattice:
             for point in cluster[2:]:
                 if (abs(dist(point, obstacle_2d_data)) <= error):
                     print("Badhai ho lattice mil gya!")
-                    lattice_cluster = [False, cluster[0], cluster[1], obstacle_2d_data]
+                    lattice_cluster = [False, cluster[0], cluster[1], point]
+                    print("Lattice Cluster formed: " ,lattice_cluster)
                     self.form_triangle_lattice(lattice_cluster)
                     # print (lattice_cluster)
-                    
                     return True
         return False
              
     def cluster_points(self, obstacle_2d_data):
-        if not self.clusters:  # If no clusters exist
-            self.clusters.append([False, obstacle_2d_data])        
-        else:
-            clustered = False
-            for cluster_number, cluster in enumerate(self.clusters):
-                if not cluster[0]:
-                    first_point_in_cluster = cluster[1]
-                    if ((dist(first_point_in_cluster, obstacle_2d_data) <= self.lattice_length + self.length_error) and (dist(first_point_in_cluster,obstacle_2d_data) >= self.lattice_length - self.length_error)):
-                        self.clusters[cluster_number].append(obstacle_2d_data)
-                        # if (len(self.clusters[cluster_number]) == 4):
-                        #     self.form_triangle_lattice(self.clusters[cluster_number])
-                        #     self.clusters[cluster_number][0] = True
-                        if (len(self.clusters[cluster_number]) == 3):
-                            self.form_pseudo_triangle_lattice(self.clusters[cluster_number])
-                            self.clusters[cluster_number][0] = True 
-                        clustered = True
-                        break
-            if not clustered:    
-                self.clusters.append([False, obstacle_2d_data])
+        for existing_point in self.points:
+            if abs(dist(existing_point, obstacle_2d_data) - self.lattice_length) <= self.distance_tolerance:
+                self.form_pseudo_triangle_lattice([existing_point, obstacle_2d_data])
+        
+        self.points.append(obstacle_2d_data)
+        # self.clusters.append([False, obstacle_2d_data])        
+        # for cluster_number, cluster in enumerate(self.clusters):
+        #     if not cluster[0]:
+        #         first_point_in_cluster = cluster[1]
+        #         if ((dist(first_point_in_cluster, obstacle_2d_data) <= self.lattice_length + self.length_error) and (dist(first_point_in_cluster,obstacle_2d_data) >= self.lattice_length - self.length_error)):
+        #             self.clusters[cluster_number].append(obstacle_2d_data)
+                    
+        #             # if (len(self.clusters[cluster_number]) == 4):
+        #             #     self.form_triangle_lattice(self.clusters[cluster_number])
+        #             #     self.clusters[cluster_number][0] = True
+        #             if (len(self.clusters[cluster_number]) == 3):
+        #                 self.form_pseudo_triangle_lattice(self.clusters[cluster_number])
+        #                 self.clusters[cluster_number][0] = True 
     
     def form_triangle_lattice(self, cluster):
-        if not cluster[0]:
-            centroid_of_lattice = np.mean(cluster[1:], axis=0)
-            self.lattice_centroid.append(centroid_of_lattice.tolist())
+        centroid_of_lattice = np.mean(cluster[1:], axis=0)
+        self.lattice_centroid.append(centroid_of_lattice.tolist())
     
     def form_pseudo_triangle_lattice(self, cluster):
-        if not cluster[0]:
-            X_1, Y_1 = cluster[1][0], cluster[1][1]
-            X_2, Y_2 = cluster[2][0], cluster[2][1]
-            third_point_of_lattice_ccw = (
-                X_1 + cos(radians(60))*(X_2 - X_1) - sin(radians(60))*(Y_2 - Y_1), 
-                Y_1 + sin(radians(60))*(X_2 - X_1) + cos(radians(60))*(Y_2 - Y_1)
+        X_1, Y_1 = cluster[0][X], cluster[0][Y]
+        X_2, Y_2 = cluster[1][X], cluster[1][Y]
+        third_point_of_lattice_ccw = (
+            X_1 + cos(radians(60))*(X_2 - X_1) - sin(radians(60))*(Y_2 - Y_1), 
+            Y_1 + sin(radians(60))*(X_2 - X_1) + cos(radians(60))*(Y_2 - Y_1)
+        )
+        third_point_of_lattice_cw = (
+            X_1 + cos(radians(-60))*(X_2 - X_1) - sin(radians(-60))*(Y_2 - Y_1), 
+            Y_1 + sin(radians(-60))*(X_2 - X_1) + cos(radians(-60))*(Y_2 - Y_1)
             )
-            third_point_of_lattice_cw = (
-                X_1 + cos(radians(-60))*(X_2 - X_1) - sin(radians(-60))*(Y_2 - Y_1), 
-                Y_1 + sin(radians(-60))*(X_2 - X_1) + cos(radians(-60))*(Y_2 - Y_1)
-                )
-            self.pseudo_lattice.append([cluster[1], cluster[2], third_point_of_lattice_ccw, third_point_of_lattice_cw])
+        self.pseudo_lattice.append([cluster[0], cluster[1], third_point_of_lattice_ccw, third_point_of_lattice_cw])
         
     def print_data(self):
+        print("points: ",self.points)
         print("lattice centroids: ", self.lattice_centroid)
         print("pseudo lattice coordinates: ", self.pseudo_lattice)
-        print("clusters: ", self.clusters)
                 
 class Robot:
     def __init__(self,no_of_bots):
         self.observed_lattice_obj = Lattice()
-        self.robot_workspace = Workspace(no_of_bots, -8, 4, -3, 4)
+        self.robot_workspace = Workspace(no_of_bots)
         self.total_bots = no_of_bots
         self.neighbour_array = []
         self.x = 0
@@ -173,8 +186,8 @@ class Robot:
         self.bearing = [0]
         self.neigh = 0
         self.robot = []          
-        self.goal = [7, 1] #Initial goal
-        self.goal_set = False #Set this to true if you want the agent(s) to go to initial self.goal
+        self.goal = [4, 0] #Initial goal
+        self.goal_set = True #Set this to true if you want the agent(s) to go to initial self.goal
         self.namespace = rospy.get_namespace()
         scan_topic = self.namespace + "scan"
         self.speed = Twist()
@@ -186,10 +199,7 @@ class Robot:
         self.cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=1)    
         self.pubg = rospy.Publisher('/goal', Point, queue_size=1)
         self.rad_pub = rospy.Publisher('/radius', Point, queue_size=1)
-        # self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)
-        
-        self.obstacle_coordinates = []
-    
+        # self.obs_pub = rospy.Publisher('/obs',obs, queue_size=1)    
     
     """LOCALIZATION"""
     def update_Odom(self,odom):
@@ -347,31 +357,34 @@ class Robot:
                     obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
                     obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
                     obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3)) 
-                    ##Is a new obstacle observed?
-                    # print(obstacle_coordinate)
-                    if not self.is_within_tolerance(obstacle_coordinate, self.obstacle_coordinates, 1): 
-                        if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.3):
-                            self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
-                            self.robot_workspace.update_obstacle_data(obstacle_coordinate, obs_size_limit)
-                            default_lattice_radius = self.observed_lattice_obj.lattice_length/sqrt(3)
-                            self.robot_workspace.update_lattice_data(self.observed_lattice_obj.lattice_centroid, default_lattice_radius)
-                            if not self.robot_workspace.validity_of_goal(self.goal):
-                                self.robot_workspace.generate_goal()
-                            self.obstacle_coordinates.append(obstacle_coordinate)
-                            # print(distance_angle_pairs)
-                            # print("\n")
-                            # print(obstacle_coordinate)
-                            # print(self.robot_workspace.agents_location)
+                    
+                    if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.3):
+                        if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.obstacle_coordinates, 0.3): 
+                                ##Is a new obstacle observed?
+                                # print(obstacle_coordinate)
+                                # print(self.robot_workspace.agents_location)
+                                self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
+                                self.robot_workspace.update_obstacle_data(obstacle_coordinate, obs_size_limit)
+                                default_lattice_radius = self.observed_lattice_obj.lattice_length/sqrt(3)
+                                self.robot_workspace.update_lattice_data(self.observed_lattice_obj.lattice_centroid, default_lattice_radius)
+                                if all(coord is not None for coord in self.goal):
+                                    if self.robot_workspace.validity_of_goal(self.goal):
+                                        self.robot_workspace.generate_goal()
+                                # print(distance_angle_pairs)
+                                # print("\n")
+                                # print(obstacle_coordinate)
+                                # print(self.robot_workspace.agents_location)
+                    else:
+                        # Check and print the robot ID
+                        robot_id = self.robot_workspace.get_robot_id_at(obstacle_coordinate)
+                        if robot_id is not None:
+                            # print(f"Ayyyyyyy robot detected! Robot ID: {robot_id} and I am: {self.namespace}")
+                            # print("Neighbour at:",self.robot_workspace.agents_location[robot_id])
+                            if not self.is_within_tolerance(self.robot_workspace.agents_location[robot_id], self.neighbour_array, 0.3):
+                                self.neighbour_array.append(self.robot_workspace.agents_location[robot_id])
                         else:
-                            # Check and print the robot ID
-                            robot_id = self.robot_workspace.get_robot_id_at(obstacle_coordinate)
-                            if robot_id is not None:
-                                # print(f"Ayyyyyyy robot detected! Robot ID: {robot_id}")
-                                if not self.is_within_tolerance(self.robot_workspace.agents_location[robot_id], self.neighbour_array, 0.3):
-                                    self.neighbour_array.append(self.robot_workspace.agents_location[robot_id])
-                            else:
-                                print("Ayyyyyyy robot detected, but ID not found!")
-                        # print("Obstacle_coordinates:", self.obstacle_coordinates)
+                            print("Ayyyyyyy robot detected, but ID not found!")
+                    # print("Obstacle_coordinates:", self.obstacle_coordinates)
 
 
     """NAVIGATION"""
@@ -420,8 +433,8 @@ class Robot:
         Turn Right by default or rotate on CCW fashion"""
         # print("Wall following")
         deg = 30
-        dst = 0.75
-        avoidance_radius = 1.5
+        dst = 1.5
+        avoidance_radius = 1
         
         closest_distance = float('inf')
         
@@ -434,9 +447,12 @@ class Robot:
             if min(self.range[0:deg]) <= dst or min(self.range[(360-deg):]) <= dst: # front wall
                 self.speed.angular.z = -0.2
                 self.speed.linear.x = 0.0
+                # print("Front wall observed by", self.namespace)
             elif min(self.range[deg:89]) < dst: # left wall 
                 self.speed.angular.z = 0.0
                 self.speed.linear.x = 0.2
+                # print(self.range)
+                # print("Left wall observed by", self.namespace)
             # elif min(self.range[(359-120):(359-deg)]) < dst: # right wall
             #     self.speed.angular.z = 0.0
             #     self.speed.linear.x = -0.2
@@ -478,15 +494,22 @@ class Robot:
         # print("My goal:", self.goal, "\n")
         
         # print(self.neighbour_array)
-        # print("For agent: ", self.namespace)
+        # if self.namespace == "/tb3_1/":
+            # print("For agent: ", self.namespace)
+            # print("Lattice data captured:",self.observed_lattice_obj.lattice_centroid)
+            # print("Pseudo Lattice data captured:",self.observed_lattice_obj.pseudo_lattice)
+            # print("\n")
         # print(self.goal)
         robot_position = [self.odom.x, self.odom.y]
         obstacle_avoidance_distance = 2 #2meters
-        for obstacle_coordinate in self.obstacle_coordinates:
-            if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
-                obstacle_nearby = True
-            else:
-                obstacle_nearby = False
+        if len(self.robot_workspace.obstacle_coordinates) == 0:
+            obstacle_nearby = False
+        else:
+            for obstacle_coordinate in self.robot_workspace.obstacle_coordinates:
+                if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
+                    obstacle_nearby = True
+                else:
+                    obstacle_nearby = False
         
         if len(self.neighbour_array) == 0 or obstacle_nearby:    
             if not self.goal_set:
@@ -526,13 +549,14 @@ class Robot:
                 self.goal = [None, None]
             else:
                 self.set_goal()
-        
+        # print("Agent Name:", self.namespace)
+        # print("Goal:", self.goal)
         if all(coord is not None for coord in self.goal):
             # print("Moving towards goal")
             self.speed.linear.x = 0.18
             self.speed.angular.z = K*np.sign(self.dtheta)
             
-            for obstacle_coordinate in self.obstacle_coordinates:
+            for obstacle_coordinate in self.robot_workspace.obstacle_coordinates:
                 if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
                     self.navigate_near_obstacle(robot_position)    
         else:
