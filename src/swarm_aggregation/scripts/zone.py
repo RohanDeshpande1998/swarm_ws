@@ -80,14 +80,15 @@ class Workspace:
                 # Both goal_coordinates are provided
                 x = goal_coordinates[X]
                 y = goal_coordinates[Y]
+                return x,y
             else:
                 x = random.uniform(x_min, x_max)
                 y = random.uniform(y_min, y_max)
-            if self.validity_of_goal([x,y]):
-                return x,y
-            else:
-                # print("invalid goal")
-                goal_coordinates = [None, None]
+                if self.validity_of_goal([x,y]):
+                    return x,y
+                else:
+                    print("invalid goal: ", x,y)
+                    goal_coordinates = [None, None]
         
     def validity_of_goal(self, goal):
         if len(self.lattice_data) != 0:    
@@ -99,68 +100,116 @@ class Workspace:
                 return False
         return True
         
+# class Lattice:
+#     def __init__(self):
+#         self.points = []  # List of previously received points
+#         self.lattice_length = 1.5
+#         self.distance_tolerance = 0.2
+#         self.pseudo_lattice = []
+#         self.lattice_centroid = []
+             
+#     def process_new_data_point(self, obstacle_2d_data):
+#         if (len(self.pseudo_lattice)>0):
+#             self.check_pseudo_lattice_match(obstacle_2d_data, 0.2)
+#         self.cluster_points(obstacle_2d_data)
+    
+#     def check_pseudo_lattice_match(self, obstacle_2d_data, error):
+#         for cluster in self.pseudo_lattice:
+#             for point in cluster[2:]:
+#                 if (abs(dist(point, obstacle_2d_data)) <= error):
+#                     print("Badhai ho lattice mil gya!")
+#                     lattice_cluster = [False, cluster[0], cluster[1], point]
+#                     print("Lattice Cluster formed: " ,lattice_cluster)
+#                     self.form_triangle_lattice(lattice_cluster)
+#                     # print (lattice_cluster)
+#                     return True
+#         return False
+             
+#     def cluster_points(self, obstacle_2d_data):
+#         for existing_point in self.points:
+#             if abs(dist(existing_point, obstacle_2d_data) - self.lattice_length) <= self.distance_tolerance:
+#                 self.form_pseudo_triangle_lattice([existing_point, obstacle_2d_data])
+        
+#         self.points.append(obstacle_2d_data)
+
+    
+#     def form_triangle_lattice(self, cluster):
+#         centroid_of_lattice = np.mean(cluster[1:], axis=0)
+#         self.lattice_centroid.append(centroid_of_lattice.tolist())
+    
+#     def form_pseudo_triangle_lattice(self, cluster):
+#         X_1, Y_1 = cluster[0][X], cluster[0][Y]
+#         X_2, Y_2 = cluster[1][X], cluster[1][Y]
+#         third_point_of_lattice_ccw = (
+#             X_1 + cos(radians(60))*(X_2 - X_1) - sin(radians(60))*(Y_2 - Y_1), 
+#             Y_1 + sin(radians(60))*(X_2 - X_1) + cos(radians(60))*(Y_2 - Y_1)
+#         )
+#         third_point_of_lattice_cw = (
+#             X_1 + cos(radians(-60))*(X_2 - X_1) - sin(radians(-60))*(Y_2 - Y_1), 
+#             Y_1 + sin(radians(-60))*(X_2 - X_1) + cos(radians(-60))*(Y_2 - Y_1)
+#             )
+#         self.pseudo_lattice.append([cluster[0], cluster[1], third_point_of_lattice_ccw, third_point_of_lattice_cw])
+
 class Lattice:
     def __init__(self):
-        self.points = []  # List of previously received points
+        self.points = np.empty((0, 2))
         self.lattice_length = 1.5
         self.distance_tolerance = 0.2
-        self.pseudo_lattice = []
-        self.lattice_centroid = []
+        self.pseudo_lattice = np.empty((0, 4, 2))
+        self.lattice_centroid = np.empty((0, 2))
              
     def process_new_data_point(self, obstacle_2d_data):
-        if (len(self.pseudo_lattice)>0):
+        if len(self.pseudo_lattice) > 0:
             self.check_pseudo_lattice_match(obstacle_2d_data, 0.2)
         self.cluster_points(obstacle_2d_data)
+        self.trim_data()
     
     def check_pseudo_lattice_match(self, obstacle_2d_data, error):
         for cluster in self.pseudo_lattice:
-            for point in cluster[2:]:
-                if (abs(dist(point, obstacle_2d_data)) <= error):
-                    print("Badhai ho lattice mil gya!")
-                    lattice_cluster = [False, cluster[0], cluster[1], point]
-                    print("Lattice Cluster formed: " ,lattice_cluster)
-                    self.form_triangle_lattice(lattice_cluster)
-                    # print (lattice_cluster)
-                    return True
+            points_array = np.array(cluster[2:])
+            distances = np.linalg.norm(points_array - obstacle_2d_data, axis=1)
+            if np.any(distances <= error):
+                print("Badhai ho lattice mil gya!")
+                lattice_cluster = [False, cluster[0], cluster[1], points_array[np.argmin(distances)]]
+                print("Lattice Cluster formed: ", lattice_cluster)
+                self.form_triangle_lattice(lattice_cluster)
+                return True
         return False
              
     def cluster_points(self, obstacle_2d_data):
-        for existing_point in self.points:
-            if abs(dist(existing_point, obstacle_2d_data) - self.lattice_length) <= self.distance_tolerance:
-                self.form_pseudo_triangle_lattice([existing_point, obstacle_2d_data])
-        
-        self.points.append(obstacle_2d_data)
-        # self.clusters.append([False, obstacle_2d_data])        
-        # for cluster_number, cluster in enumerate(self.clusters):
-        #     if not cluster[0]:
-        #         first_point_in_cluster = cluster[1]
-        #         if ((dist(first_point_in_cluster, obstacle_2d_data) <= self.lattice_length + self.length_error) and (dist(first_point_in_cluster,obstacle_2d_data) >= self.lattice_length - self.length_error)):
-        #             self.clusters[cluster_number].append(obstacle_2d_data)
-                    
-        #             # if (len(self.clusters[cluster_number]) == 4):
-        #             #     self.form_triangle_lattice(self.clusters[cluster_number])
-        #             #     self.clusters[cluster_number][0] = True
-        #             if (len(self.clusters[cluster_number]) == 3):
-        #                 self.form_pseudo_triangle_lattice(self.clusters[cluster_number])
-        #                 self.clusters[cluster_number][0] = True 
+        if len(self.points) > 0:
+            distances = np.linalg.norm(self.points - obstacle_2d_data, axis=1)
+            close_points = np.where(np.abs(distances - self.lattice_length) <= self.distance_tolerance)[0]
+            for idx in close_points:
+                self.form_pseudo_triangle_lattice([self.points[idx], obstacle_2d_data])
+        self.points = np.vstack((self.points, obstacle_2d_data))
     
     def form_triangle_lattice(self, cluster):
-        centroid_of_lattice = np.mean(cluster[1:], axis=0)
-        self.lattice_centroid.append(centroid_of_lattice.tolist())
+        centroid_of_lattice = np.mean(np.array(cluster[1:]), axis=0)
+        self.lattice_centroid = np.vstack((self.lattice_centroid, centroid_of_lattice))
     
     def form_pseudo_triangle_lattice(self, cluster):
-        X_1, Y_1 = cluster[0][X], cluster[0][Y]
-        X_2, Y_2 = cluster[1][X], cluster[1][Y]
-        third_point_of_lattice_ccw = (
-            X_1 + cos(radians(60))*(X_2 - X_1) - sin(radians(60))*(Y_2 - Y_1), 
-            Y_1 + sin(radians(60))*(X_2 - X_1) + cos(radians(60))*(Y_2 - Y_1)
-        )
-        third_point_of_lattice_cw = (
-            X_1 + cos(radians(-60))*(X_2 - X_1) - sin(radians(-60))*(Y_2 - Y_1), 
-            Y_1 + sin(radians(-60))*(X_2 - X_1) + cos(radians(-60))*(Y_2 - Y_1)
-            )
-        self.pseudo_lattice.append([cluster[0], cluster[1], third_point_of_lattice_ccw, third_point_of_lattice_cw])
+        vec = np.array(cluster[1]) - np.array(cluster[0])
+        rotation_matrix_ccw = np.array([[np.cos(np.radians(60)), -np.sin(np.radians(60))],
+                                         [np.sin(np.radians(60)), np.cos(np.radians(60))]])
+        rotation_matrix_cw = np.array([[np.cos(np.radians(-60)), -np.sin(np.radians(-60))],
+                                        [np.sin(np.radians(-60)), np.cos(np.radians(-60))]])
         
+        third_point_ccw = np.array(cluster[0]) + np.dot(rotation_matrix_ccw, vec)
+        third_point_cw = np.array(cluster[0]) + np.dot(rotation_matrix_cw, vec)
+        new_data = np.expand_dims([cluster[0], cluster[1], third_point_ccw, third_point_cw], axis=0)
+        self.pseudo_lattice = np.vstack((self.pseudo_lattice, new_data))
+    
+    def trim_data(self):
+        max_points = 10
+        max_pseudo_lattices = 10
+
+        if len(self.points) > max_points:
+            self.points = self.points[-max_points:]
+        
+        if len(self.pseudo_lattice) > max_pseudo_lattices:
+            self.pseudo_lattice = self.pseudo_lattice[-max_pseudo_lattices:]
+
     def print_data(self):
         print("points: ",self.points)
         print("lattice centroids: ", self.lattice_centroid)
@@ -187,7 +236,7 @@ class Robot:
         self.neigh = 0
         self.robot = []          
         self.goal = [4, 0] #Initial goal
-        self.goal_set = True #Set this to true if you want the agent(s) to go to initial self.goal
+        self.goal_set = False #Set this to true if you want the agent(s) to go to initial self.goal
         self.namespace = rospy.get_namespace()
         scan_topic = self.namespace + "scan"
         self.speed = Twist()
@@ -325,7 +374,7 @@ class Robot:
     def process_scanner_data(self,msg):
         # Threshold limit to consider as an obstacle (in meters)
         R_max = 2
-        obs_size_limit = 2
+        obs_size_limit = 0.15
         distances = []
         angles = []
         distance_angle_pairs = []
@@ -483,38 +532,38 @@ class Robot:
         """write code for identification based goal update of robot"""
         """If robot -> update goal
         If obstacle -> wall following"""
+        
         self.goal = self.robot_workspace.generate_goal()
         self.goal_set = True
 
         
     def controller(self,k):
+        # print(self.robot_workspace.obstacle_coordinates, "for robot:", self.namespace, "for timestamp: ", k)
+
         # print("My name:",self.namespace)
         # print("Things around me are at:", self.neighbour_array)
         # print("My location:", self.x,self.y)
         # print("My goal:", self.goal, "\n")
         
         # print(self.neighbour_array)
-        # if self.namespace == "/tb3_1/":
+        # if self.namespace == "/tb3_3/":
             # print("For agent: ", self.namespace)
             # print("Lattice data captured:",self.observed_lattice_obj.lattice_centroid)
             # print("Pseudo Lattice data captured:",self.observed_lattice_obj.pseudo_lattice)
+            # print(self.goal)
             # print("\n")
-        # print(self.goal)
+        obstacle_nearby = False
         robot_position = [self.odom.x, self.odom.y]
         obstacle_avoidance_distance = 2 #2meters
-        if len(self.robot_workspace.obstacle_coordinates) == 0:
-            obstacle_nearby = False
-        else:
-            for obstacle_coordinate in self.robot_workspace.obstacle_coordinates:
-                if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
-                    obstacle_nearby = True
-                else:
-                    obstacle_nearby = False
+        for obstacle_coordinate in self.robot_workspace.obstacle_coordinates:
+            if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
+                obstacle_nearby = True
+
         
         if len(self.neighbour_array) == 0 or obstacle_nearby:    
             if not self.goal_set:
                 self.set_goal()
-                # print("Random Goal set:", self.goal)
+                # print("Random Goal set:", self.goal, "for robot: ", self.namespace)
         else:
             x = self.x
             y = self.y
@@ -529,7 +578,7 @@ class Robot:
             
             # print("Neighbour array:", self.neighbour_array)
             # print("Cluster goal set:", self.goal, "\n")
-            self.goal_set = True
+            # self.goal_set = True
             
 
         self.incx = (self.goal[X] - self.x)
@@ -563,7 +612,6 @@ class Robot:
             self.speed.linear.x = 0
             self.speed.linear.y = 0
             self.speed.angular.z = 0
-            self.goal_set = False
         
         self.cmd_vel.publish(self.speed)
         point = Point()
