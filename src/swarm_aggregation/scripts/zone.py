@@ -16,6 +16,7 @@ import random
 X = 0
 Y = 1
 MINIMUM_NEIGHBOURS = 1
+GOAL_RESET_TIME = 40 ##40sec
 class Workspace:
     def __init__(self, no_of_bots):
         #Danger Zone square
@@ -226,7 +227,8 @@ class Robot:
         self.incident_time = []           
         self.yaw = 0
         self.range = [0]
-        self.time = 0
+        self.goal_start_time = 0
+        self.current_time = 0
         self.angle = 0
         self.ang_max = 0
         self.ang_inc = 0
@@ -528,12 +530,12 @@ class Robot:
             self.speed.linear.y = robot_speed[1]
             self.speed.angular.z = robot_angular_velocity
     
-    def set_goal(self):
+    def set_goal(self, goal_coordinates = [None,None]):
         """write code for identification based goal update of robot"""
         """If robot -> update goal
         If obstacle -> wall following"""
-        
-        self.goal = self.robot_workspace.generate_goal()
+        self.goal_start_time = self.current_time
+        self.goal = self.robot_workspace.generate_goal(goal_coordinates)
         self.goal_set = True
 
         
@@ -574,7 +576,8 @@ class Robot:
             # print(x,y)
             cluster_goal = [x/(len(self.neighbour_array)+1), y/(len(self.neighbour_array) + 1)]
             # print(cluster_goal)
-            self.goal = self.robot_workspace.generate_goal(cluster_goal)
+            self.set_goal(cluster_goal)
+            self.goal_set = False ##Since this is a tentative goal
             
             # print("Neighbour array:", self.neighbour_array)
             # print("Cluster goal set:", self.goal, "\n")
@@ -620,6 +623,17 @@ class Robot:
         point.z = 0        
         self.pubg.publish(point)
 
+## If the robot has not formed a cluster and is unable to reach the goal position in the GOAL RESET TIME then resets the Goal
+    def goal_reset(self, time):
+        self.current_time = time
+        if all(coord is not None for coord in self.goal):
+            if (self.current_time - self.goal_start_time > GOAL_RESET_TIME):
+                print("Goal before:", self.goal)
+                self.set_goal()
+                print("Goal reset for robot:",self.namespace)
+                print("Goal after:",self.goal)
+
+
 if __name__ == '__main__':
     rospy.init_node("obstacle_controller")
     rospy.loginfo("Chal Gye badde")
@@ -635,6 +649,7 @@ if __name__ == '__main__':
         K = 0.3
         l.append((k+1)/10) # Time
         bot.controller(k)
+        bot.goal_reset(l[-1])
         rate.sleep()
     # observed_lattice_obj = Lattice()
     # # First test point, will start forming a cluster

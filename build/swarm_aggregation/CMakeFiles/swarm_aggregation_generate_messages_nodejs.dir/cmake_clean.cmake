@@ -1,6 +1,6 @@
 file(REMOVE_RECURSE
-  "/home/rohan/swarm_ws/devel/share/gennodejs/ros/swarm_aggregation/msg/bot.js"
-  "/home/rohan/swarm_ws/devel/share/gennodejs/ros/swarm_aggregation/msg/botPose.js"
+  "/home/arms/rohand_ws/swarm_ws/devel/share/gennodejs/ros/swarm_aggregation/msg/bot.js"
+  "/home/arms/rohand_ws/swarm_ws/devel/share/gennodejs/ros/swarm_aggregation/msg/botPose.js"
   "CMakeFiles/swarm_aggregation_generate_messages_nodejs"
 )
 

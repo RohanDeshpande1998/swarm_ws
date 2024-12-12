@@ -1,6 +1,6 @@
 file(REMOVE_RECURSE
-  "/home/rohan/swarm_ws/devel/share/common-lisp/ros/swarm_aggregation/msg/bot.lisp"
-  "/home/rohan/swarm_ws/devel/share/common-lisp/ros/swarm_aggregation/msg/botPose.lisp"
+  "/home/arms/rohand_ws/swarm_ws/devel/share/common-lisp/ros/swarm_aggregation/msg/bot.lisp"
+  "/home/arms/rohand_ws/swarm_ws/devel/share/common-lisp/ros/swarm_aggregation/msg/botPose.lisp"
   "CMakeFiles/swarm_aggregation_generate_messages_lisp"
 )
 

@@ -1,7 +1,7 @@
 file(REMOVE_RECURSE
-  "/home/rohan/swarm_ws/devel/lib/python3/dist-packages/swarm_aggregation/msg/__init__.py"
-  "/home/rohan/swarm_ws/devel/lib/python3/dist-packages/swarm_aggregation/msg/_bot.py"
-  "/home/rohan/swarm_ws/devel/lib/python3/dist-packages/swarm_aggregation/msg/_botPose.py"
+  "/home/arms/rohand_ws/swarm_ws/devel/lib/python3/dist-packages/swarm_aggregation/msg/__init__.py"
+  "/home/arms/rohand_ws/swarm_ws/devel/lib/python3/dist-packages/swarm_aggregation/msg/_bot.py"
+  "/home/arms/rohand_ws/swarm_ws/devel/lib/python3/dist-packages/swarm_aggregation/msg/_botPose.py"
   "CMakeFiles/swarm_aggregation_generate_messages_py"
 )
 

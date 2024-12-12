@@ -67,14 +67,14 @@ set(swarm_aggregation_CONFIG_INCLUDED TRUE)
 
 # set variables for source/devel/install prefixes
 if("FALSE" STREQUAL "TRUE")
-  set(swarm_aggregation_SOURCE_PREFIX /home/rohan/swarm_ws/src/swarm_aggregation)
-  set(swarm_aggregation_DEVEL_PREFIX /home/rohan/swarm_ws/devel)
+  set(swarm_aggregation_SOURCE_PREFIX /home/arms/rohand_ws/swarm_ws/src/swarm_aggregation)
+  set(swarm_aggregation_DEVEL_PREFIX /home/arms/rohand_ws/swarm_ws/devel)
   set(swarm_aggregation_INSTALL_PREFIX "")
   set(swarm_aggregation_PREFIX ${swarm_aggregation_DEVEL_PREFIX})
 else()
   set(swarm_aggregation_SOURCE_PREFIX "")
   set(swarm_aggregation_DEVEL_PREFIX "")
-  set(swarm_aggregation_INSTALL_PREFIX /home/rohan/swarm_ws/install)
+  set(swarm_aggregation_INSTALL_PREFIX /home/arms/rohand_ws/swarm_ws/install)
   set(swarm_aggregation_PREFIX ${swarm_aggregation_INSTALL_PREFIX})
 endif()
 
@@ -154,7 +154,7 @@ foreach(library ${libraries})
     set(lib_path "")
     set(lib "${library}-NOTFOUND")
     # since the path where the library is found is returned we have to iterate over the paths manually
-    foreach(path /home/rohan/swarm_ws/install/lib;/home/rohan/swarm_ws/devel/lib;/opt/ros/noetic/lib)
+    foreach(path /home/arms/rohand_ws/swarm_ws/install/lib;/home/arms/rohand_ws/swarm_ws/devel/lib;/opt/ros/noetic/lib)
       find_library(lib ${library}
         PATHS ${path}
         NO_DEFAULT_PATH NO_CMAKE_FIND_ROOT_PATH)

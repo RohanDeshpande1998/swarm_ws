@@ -1,12 +1,12 @@
 
 "use strict";
 
-let obs = require('./obs.js');
-let bot = require('./bot.js');
 let botPose = require('./botPose.js');
+let bot = require('./bot.js');
+let obs = require('./obs.js');
 
 module.exports = {
-  obs: obs,
-  bot: bot,
   botPose: botPose,
+  bot: bot,
+  obs: obs,
 };
