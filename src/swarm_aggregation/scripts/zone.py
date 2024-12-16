@@ -20,16 +20,16 @@ GOAL_RESET_TIME = 40 ##40sec
 class Workspace:
     def __init__(self, no_of_bots):
         #Danger Zone square
-        self.sqr_1_x_min = -7
+        self.sqr_1_x_min = -11
         self.sqr_1_x_max = -0.5
-        self.sqr_1_y_min = -3
-        self.sqr_1_y_max = 3
+        self.sqr_1_y_min = -2.5
+        self.sqr_1_y_max = 5.5
         
         #Safe Zone square
         self.sqr_2_x_min = 1.5
         self.sqr_2_x_max = 7.5
         self.sqr_2_y_min = -5.5
-        self.sqr_2_y_max = 0
+        self.sqr_2_y_max = -0.5
         self.goal = [None, None] 
         self.lattice_data = [] # Array containing list of (lattice_centroid, radius)
         self.obstacle_data = [] # Array containing list of (obstacle_coordinates, diameter)
@@ -595,7 +595,7 @@ class Robot:
         # Gradient of Bearing
         self.dtheta = (self.bearing[k] - self.bearing[k-1])/h
         
-        if (self.dis_err) <= 0.90:
+        if (self.dis_err) <= 0.50:
             self.goal_set = False
             if len(self.neighbour_array)>=MINIMUM_NEIGHBOURS:
                 self.goal = [None, None]

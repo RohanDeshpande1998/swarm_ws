@@ -47,7 +47,7 @@
     <!-- <arg name="world_name" value="$(find swarm_aggregation)/worlds/world_with_two_lattice_structures_with_end_pillar_enclosed_in_a_medium_room.world"/>  -->
     
     <!-- Worlds for publication-->
-    <arg name="world_name" value="$(find swarm_aggregation)/worlds/worlds_for_publications/with_three_lattices.world"/>
+    <arg name="world_name" value="$(find swarm_aggregation)/worlds/worlds_for_publications/with_five_lattices.world"/>
     <arg name="paused" value="true"/>
     <arg name="use_sim_time" value="true"/>
     <arg name="gui" value="true"/>
