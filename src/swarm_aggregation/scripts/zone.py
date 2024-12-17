@@ -81,7 +81,11 @@ class Workspace:
                 # Both goal_coordinates are provided
                 x = goal_coordinates[X]
                 y = goal_coordinates[Y]
-                return x,y
+                if self.validity_of_goal([x,y]):
+                    return x,y
+                else:
+                    goal_coordinates = [None, None]
+
             else:
                 x = random.uniform(x_min, x_max)
                 y = random.uniform(y_min, y_max)
@@ -234,7 +238,8 @@ class Robot:
         self.ang_inc = 0
         self.disij = []
         self.delij = []             
-        self.bearing = [0]
+        self.current_bearing = 0
+        self.previous_bearing = 0
         self.neigh = 0
         self.robot = []          
         self.goal = [4, 0] #Initial goal
@@ -246,7 +251,7 @@ class Robot:
         self.odom_sub = rospy.Subscriber("/odom",Odometry,self.update_Odom)
         self.bot_data = rospy.Subscriber("/obs_data", botPose, self.get_other_bot_position) 
         self.object_detector = rospy.Subscriber(scan_topic,LaserScan, self.scanner)
-
+        self.near_obstacle = False
         self.cmd_vel = rospy.Publisher("/cmd_vel", Twist, queue_size=1)    
         self.pubg = rospy.Publisher('/goal', Point, queue_size=1)
         self.rad_pub = rospy.Publisher('/radius', Point, queue_size=1)
@@ -381,6 +386,7 @@ class Robot:
         angles = []
         distance_angle_pairs = []
         obstacles_found = False
+        self.near_obstacle = False
         self.neighbour_array = []
         # Iterate through laser scan ranges and print angles where distance < limit
         for angle, distance in enumerate(msg.ranges):
@@ -403,15 +409,15 @@ class Robot:
             median_obstacle_distance_list, edge_points_list = self.get_medians_and_edge_with_angle(distance_angle_pairs, 0.1,2)
             median_obstacle_distance_indices_list = [rounded_distances.index(val) for val in median_obstacle_distance_list]
             edge_points_indices_list = [rounded_distances.index(val[0]) for val in edge_points_list]
-            for enum, index in enumerate(median_obstacle_distance_indices_list):
-                if ((rounded_distances[index]*tan(radians(abs(angles[index] - angles[edge_points_indices_list[enum]])))) < obs_size_limit):
-                    obstacle_x = self.odom.x + rounded_distances[index]*cos(radians(angles[index]) + self.yaw)
-                    obstacle_y = self.odom.y + rounded_distances[index]*sin(radians(angles[index]) + self.yaw)
+            for index, enum in enumerate(median_obstacle_distance_indices_list):
+                if ((rounded_distances[enum]*tan(radians(abs(angles[enum] - angles[edge_points_indices_list[index]])))) < obs_size_limit):
+                    obstacle_x = self.odom.x + rounded_distances[enum]*cos(radians(angles[enum]) + self.yaw)
+                    obstacle_y = self.odom.y + rounded_distances[enum]*sin(radians(angles[enum]) + self.yaw)
                     obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3)) 
-                    
                     if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.3):
+                        self.near_obstacle = True
                         if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.obstacle_coordinates, 0.3): 
-                                ##Is a new obstacle observed?
+                                ##A new obstacle observed
                                 # print(obstacle_coordinate)
                                 # print(self.robot_workspace.agents_location)
                                 self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
@@ -484,7 +490,7 @@ class Robot:
         Turn Right by default or rotate on CCW fashion"""
         # print("Wall following")
         deg = 30
-        dst = 1.5
+        dst = 0.5
         avoidance_radius = 1
         
         closest_distance = float('inf')
@@ -554,68 +560,57 @@ class Robot:
             # print("Pseudo Lattice data captured:",self.observed_lattice_obj.pseudo_lattice)
             # print(self.goal)
             # print("\n")
-        obstacle_nearby = False
         robot_position = [self.odom.x, self.odom.y]
-        obstacle_avoidance_distance = 2 #2meters
-        for obstacle_coordinate in self.robot_workspace.obstacle_coordinates:
-            if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
-                obstacle_nearby = True
-
-        
-        if len(self.neighbour_array) == 0 or obstacle_nearby:    
-            if not self.goal_set:
-                self.set_goal()
-                # print("Random Goal set:", self.goal, "for robot: ", self.namespace)
-        else:
-            x = self.x
-            y = self.y
-            for coords in self.neighbour_array:
-                x += coords[X]
-                y += coords[Y]
-            
-            # print(x,y)
-            cluster_goal = [x/(len(self.neighbour_array)+1), y/(len(self.neighbour_array) + 1)]
-            # print(cluster_goal)
-            self.set_goal(cluster_goal)
-            self.goal_set = False ##Since this is a tentative goal
-            
-            # print("Neighbour array:", self.neighbour_array)
-            # print("Cluster goal set:", self.goal, "\n")
-            # self.goal_set = True
-            
-
-        self.incx = (self.goal[X] - self.x)
-        self.incy = (self.goal[Y] - self.y)
-        # Bearing of bot
-        self.bearing.append(atan2(self.incy,self.incx))
-
-        # Distance Error
-        self.dis_err = (sqrt(self.incx**2+self.incy**2))
-        
-        # Gradient of Bearing
-        self.dtheta = (self.bearing[k] - self.bearing[k-1])/h
-        
-        if (self.dis_err) <= 0.50:
-            self.goal_set = False
-            if len(self.neighbour_array)>=MINIMUM_NEIGHBOURS:
-                self.goal = [None, None]
+        if not (all(coord is None for coord in self.goal) and len(self.neighbour_array)>=MINIMUM_NEIGHBOURS):
+            if len(self.neighbour_array)>0:
+                x = self.x
+                y = self.y
+                for coords in self.neighbour_array:
+                    x += coords[X]
+                    y += coords[Y]
+                cluster_goal = [x/(len(self.neighbour_array)+1), y/(len(self.neighbour_array) + 1)]
+                self.set_goal(cluster_goal)
+                self.goal_set = True ##Since this is a tentative goal
             else:
-                self.set_goal()
-        # print("Agent Name:", self.namespace)
-        # print("Goal:", self.goal)
-        if all(coord is not None for coord in self.goal):
-            # print("Moving towards goal")
-            self.speed.linear.x = 0.18
-            self.speed.angular.z = K*np.sign(self.dtheta)
+                if not self.goal_set:
+                    self.set_goal()
+                # print("Neighbour array:", self.neighbour_array)
+                # print("Cluster goal set:", self.goal, "\n")
+                # self.goal_set = True
+                
+
+            self.incx = (self.goal[X] - self.x)
+            self.incy = (self.goal[Y] - self.y)
+            # Bearing of bot
+            self.current_bearing = (atan2(self.incy,self.incx))
+
+            # Distance Error
+            self.dis_err = (sqrt(self.incx**2+self.incy**2))
             
-            for obstacle_coordinate in self.robot_workspace.obstacle_coordinates:
-                if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
-                    self.navigate_near_obstacle(robot_position)    
-        else:
-            self.speed.linear.x = 0
-            self.speed.linear.y = 0
-            self.speed.angular.z = 0
-        
+            # Gradient of Bearing
+            self.dtheta = (self.current_bearing - self.previous_bearing)/h
+            self.previous_bearing = self.current_bearing
+            
+            if (self.dis_err) <= 0.60:
+                self.goal_set = False
+                if len(self.neighbour_array)>=MINIMUM_NEIGHBOURS:
+                    self.goal = [None, None]
+                else:
+                    self.set_goal()
+            if all(coord is not None for coord in self.goal):
+                print(f"{self.namespace} moving towards goal {self.goal}")
+                self.speed.linear.x = 0.18
+                self.speed.angular.z = K*np.sign(self.dtheta)
+                obstacle_avoidance_distance = 2 #2meters
+                for obstacle_coordinate in self.robot_workspace.obstacle_coordinates:
+                    if dist(obstacle_coordinate, robot_position) < obstacle_avoidance_distance:
+                        self.navigate_near_obstacle(robot_position)
+                print(f"with velocity: {self.speed.linear.x} and angular velocity: {self.speed.angular.z}")    
+            else:
+                self.speed.linear.x = 0
+                self.speed.linear.y = 0
+                self.speed.angular.z = 0
+            
         self.cmd_vel.publish(self.speed)
         point = Point()
         point.x = self.goal[X]
