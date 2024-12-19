@@ -12,7 +12,7 @@ from nav_msgs.msg import Odometry
 import matplotlib.pyplot as plt
 import random
 
-# Global Definitions
+# Global CONSTANTS
 X = 0
 Y = 1
 MINIMUM_NEIGHBOURS = 1
@@ -20,7 +20,7 @@ GOAL_RESET_TIME = 40 ##40sec
 class Workspace:
     def __init__(self, no_of_bots):
         #Danger Zone square
-        self.sqr_1_x_min = -11
+        self.sqr_1_x_min = -10
         self.sqr_1_x_max = -0.5
         self.sqr_1_y_min = -2.5
         self.sqr_1_y_max = 5.5
@@ -30,6 +30,18 @@ class Workspace:
         self.sqr_2_x_max = 7.5
         self.sqr_2_y_min = -5.5
         self.sqr_2_y_max = -0.5
+                #Danger Zone square
+        # self.sqr_1_x_min = -2
+        # self.sqr_1_x_max = 2
+        # self.sqr_1_y_min = 3
+        # self.sqr_1_y_max = 6
+        
+        # #Safe Zone square
+        # self.sqr_2_x_min = -2
+        # self.sqr_2_x_max = 2
+        # self.sqr_2_y_min = 3
+        # self.sqr_2_y_max = 6
+
         self.goal = [None, None] 
         self.lattice_data = [] # Array containing list of (lattice_centroid, radius)
         self.obstacle_data = [] # Array containing list of (obstacle_coordinates, diameter)
@@ -242,8 +254,8 @@ class Robot:
         self.previous_bearing = 0
         self.neigh = 0
         self.robot = []          
-        self.goal = [4, 0] #Initial goal
-        self.goal_set = False #Set this to true if you want the agent(s) to go to initial self.goal
+        self.goal = [0, 4] #Initial goal
+        self.goal_set = True #Set this to true if you want the agent(s) to go to initial self.goal
         self.namespace = rospy.get_namespace()
         scan_topic = self.namespace + "scan"
         self.speed = Twist()
@@ -490,7 +502,7 @@ class Robot:
         # print("Wall following")
         deg = 30
         dst = 0.8
-        avoidance_radius = 1.5
+        avoidance_radius = 1
         
         closest_distance = float('inf')
         
@@ -503,12 +515,12 @@ class Robot:
         
         if (closest_distance > avoidance_radius):
             if min(self.range[0:deg]) <= dst or min(self.range[(360-deg):]) <= dst: # front wall
-                print(f"For agent: {self.namespace} Front wall motion")
+                # print(f"For agent: {self.namespace} Front wall motion")
                 self.speed.angular.z = -0.2
                 self.speed.linear.x = 0.0
                 # print("Front wall observed by", self.namespace)
             elif min(self.range[deg:89]) < dst: # left wall
-                print(f"For agent: {self.namespace} Left wall motion") 
+                # print(f"For agent: {self.namespace} Left wall motion") 
                 self.speed.angular.z = 0.0
                 self.speed.linear.x = 0.2
                 # print(self.range)
@@ -558,12 +570,13 @@ class Robot:
             # print(self.goal)
             # print("\n")
         robot_position = [self.odom.x, self.odom.y]
-        if (all(coord is not None for coord in self.goal) or len(self.neighbour_array)<MINIMUM_NEIGHBOURS):
-            cluster_formation_avoidance_distance = 3 #3meters
-            near_lattice = False
-            for lattice_centroid, radii in self.robot_workspace.lattice_data:
-                if dist(lattice_centroid, robot_position) < cluster_formation_avoidance_distance:
-                    near_lattice = True
+        cluster_formation_avoidance_distance = 3 #3meters
+        near_lattice = False
+        for lattice_centroid, radii in self.robot_workspace.lattice_data:
+            if dist(lattice_centroid, robot_position) < cluster_formation_avoidance_distance:
+                near_lattice = True
+        if (all(coord is not None for coord in self.goal) or len(self.neighbour_array)<MINIMUM_NEIGHBOURS) or near_lattice:
+            # print(f"for robot {self.namespace} goal is {self.goal}")
             if near_lattice or not self.goal_set:
                 if not self.goal_set:
                     self.set_goal()
@@ -603,7 +616,7 @@ class Robot:
                 else:
                     self.set_goal()
             if all(coord is not None for coord in self.goal):
-                print(f"{self.namespace} moving towards goal {self.goal}")
+                # print(f"{self.namespace} moving towards goal {self.goal}")
                 self.speed.linear.x = 0.18
                 self.speed.angular.z = K*np.sign(self.dtheta)
                 # obstacle_avoidance_distance = 2 #2meters
@@ -613,7 +626,7 @@ class Robot:
                 #         near_obstacle = True
                 # if near_obstacle:
                 self.navigate_near_obstacle(robot_position)
-                print(f"with velocity: {self.speed.linear.x} and angular velocity: {self.speed.angular.z}")    
+                # print(f"with velocity: {self.speed.linear.x} and angular velocity: {self.speed.angular.z}")    
             else:
                 self.speed.linear.x = 0
                 self.speed.linear.y = 0
