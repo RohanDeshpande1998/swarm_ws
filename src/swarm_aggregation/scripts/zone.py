@@ -17,6 +17,10 @@ X = 0
 Y = 1
 MINIMUM_NEIGHBOURS = 1
 GOAL_RESET_TIME = 40 ##40sec
+LATTICE_LENGTH = 1.5
+OBSTACLE_RADIUS = 0.2
+WALL_AVOIDANCE_DISTANCE = 0.4
+
 class Workspace:
     def __init__(self, no_of_bots):
         #Danger Zone square
@@ -170,8 +174,8 @@ class Workspace:
 class Lattice:
     def __init__(self):
         self.points = np.empty((0, 2))
-        self.lattice_length = 1.5
-        self.distance_tolerance = 0.4
+        self.lattice_length = LATTICE_LENGTH
+        self.distance_tolerance = 0.2
         self.pseudo_lattice = np.empty((0, 4, 2))
         self.lattice_centroid = np.empty((0, 2))
              
@@ -186,9 +190,9 @@ class Lattice:
             points_array = np.array(cluster[2:])
             distances = np.linalg.norm(points_array - obstacle_2d_data, axis=1)
             if np.any(distances <= error):
-                print("Badhai ho lattice mil gya!")
+                # print("Badhai ho lattice mil gya!")
                 lattice_cluster = [False, cluster[0], cluster[1], points_array[np.argmin(distances)]]
-                print("Lattice Cluster formed: ", lattice_cluster)
+                # print("Lattice Cluster formed: ", lattice_cluster)
                 self.form_triangle_lattice(lattice_cluster)
                 return True
         return False
@@ -254,7 +258,7 @@ class Robot:
         self.previous_bearing = 0
         self.neigh = 0
         self.robot = []          
-        self.goal = [0, 4] #Initial goal
+        self.goal = [-3, 2] #Initial goal
         self.goal_set = True #Set this to true if you want the agent(s) to go to initial self.goal
         self.namespace = rospy.get_namespace()
         scan_topic = self.namespace + "scan"
@@ -299,7 +303,7 @@ class Robot:
         self.ang_max = msg.angle_max
         self.ang_inc = msg.angle_increment
         self.process_scanner_data(msg)
-        # rospy.loginfo(f"Minimum distance to object: {min_distance} meters")
+        rospy.loginfo(f"Minimum distance to object: {min_distance} meters")
     
     def distance(self, point1, point2):
     # Convert numbers to single-element tuples
@@ -392,8 +396,8 @@ class Robot:
 
     def process_scanner_data(self,msg):
         # Threshold limit to consider as an obstacle (in meters)
-        R_max = 2
-        obs_size_limit = 0.15
+        R_max = LATTICE_LENGTH+WALL_AVOIDANCE_DISTANCE/2 - OBSTACLE_RADIUS
+        obs_size_limit = OBSTACLE_RADIUS
         distances = []
         angles = []
         distance_angle_pairs = []
@@ -426,7 +430,7 @@ class Robot:
                     obstacle_x = self.odom.x + rounded_distances[enum]*cos(radians(angles[enum]) + self.yaw)
                     obstacle_y = self.odom.y + rounded_distances[enum]*sin(radians(angles[enum]) + self.yaw)
                     obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3)) 
-                    if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.3):
+                    if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.1):
                         self.near_obstacle = True
                         if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.obstacle_coordinates, 0.3): 
                                 ##A new obstacle observed
@@ -501,11 +505,10 @@ class Robot:
         Turn Right by default or rotate on CCW fashion"""
         # print("Wall following")
         deg = 30
-        dst = 0.8
-        avoidance_radius = 1
+        avoidance_radius = LATTICE_LENGTH/(sqrt(3)) + OBSTACLE_RADIUS + WALL_AVOIDANCE_DISTANCE
+        # print(f"avoidance radius:{avoidance_radius}")
         
         closest_distance = float('inf')
-        
         for centroid,radius in self.robot_workspace.lattice_data:
             distance = dist(centroid, robot_position)
             print(f"{centroid} for robot {self.namespace} at location {robot_position}, distance between them being {distance}")
@@ -514,21 +517,22 @@ class Robot:
                 closest_distance = distance
         
         if (closest_distance > avoidance_radius):
-            if min(self.range[0:deg]) <= dst or min(self.range[(360-deg):]) <= dst: # front wall
-                # print(f"For agent: {self.namespace} Front wall motion")
+            if min(self.range[0:deg]) <= WALL_AVOIDANCE_DISTANCE or min(self.range[(360-deg):]) <= WALL_AVOIDANCE_DISTANCE: # front wall
+                print(f"Front wall motion")
                 self.speed.angular.z = -0.2
                 self.speed.linear.x = 0.0
-                # print("Front wall observed by", self.namespace)
-            elif min(self.range[deg:89]) < dst: # left wall
-                # print(f"For agent: {self.namespace} Left wall motion") 
+                print("Front wall observed by", self.namespace)
+            elif min(self.range[deg:89]) <= WALL_AVOIDANCE_DISTANCE: # left wall
+                print(f"Left wall motion") 
                 self.speed.angular.z = 0.0
                 self.speed.linear.x = 0.2
                 # print(self.range)
-                # print("Left wall observed by", self.namespace)
+                print("Left wall observed by", self.namespace)
             # elif min(self.range[(359-120):(359-deg)]) < dst: # right wall
             #     self.speed.angular.z = 0.0
             #     self.speed.linear.x = -0.2
             else:
+                print("Nothing observed by", self.namespace)
                 self.speed.linear.x = 0.18
                 self.speed.angular.z = K*np.sign(self.dtheta)
                 
@@ -572,11 +576,11 @@ class Robot:
         robot_position = [self.odom.x, self.odom.y]
         cluster_formation_avoidance_distance = 3 #3meters
         near_lattice = False
+        print(f"for robot {self.namespace} goal is {self.goal}")
         for lattice_centroid, radii in self.robot_workspace.lattice_data:
             if dist(lattice_centroid, robot_position) < cluster_formation_avoidance_distance:
                 near_lattice = True
         if (all(coord is not None for coord in self.goal) or len(self.neighbour_array)<MINIMUM_NEIGHBOURS) or near_lattice:
-            # print(f"for robot {self.namespace} goal is {self.goal}")
             if near_lattice or not self.goal_set:
                 if not self.goal_set:
                     self.set_goal()
@@ -613,6 +617,7 @@ class Robot:
                 self.goal_set = False
                 if len(self.neighbour_array)>=MINIMUM_NEIGHBOURS:
                     self.goal = [None, None]
+                    print("WTF is this happening")
                 else:
                     self.set_goal()
             if all(coord is not None for coord in self.goal):
@@ -643,7 +648,7 @@ class Robot:
         point.z = 0        
         self.pubg.publish(point)
 
-## If the robot has not formed a cluster and is unable to reach the goal position in the GOAL RESET TIME then resets the Goal
+## If the robot has not formed a cluster and is unable to reach the goal position in the GOAL RESET TIME then reset the Goal
     def goal_reset(self, time):
         self.current_time = time
         if all(coord is not None for coord in self.goal):
@@ -660,7 +665,7 @@ if __name__ == '__main__':
     k = 0
     l = [] #l is time
     rate = rospy.Rate(4)
-    bot = Robot(6)  
+    bot = Robot(1)  
     rospy.sleep(6)
     # bot.set_goal()
     while not rospy.is_shutdown() and k < 500000:
