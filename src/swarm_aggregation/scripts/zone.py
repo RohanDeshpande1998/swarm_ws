@@ -19,15 +19,17 @@ MINIMUM_NEIGHBOURS = 1
 GOAL_RESET_TIME = 40 ##40sec
 LATTICE_LENGTH = 1.5
 OBSTACLE_RADIUS = 0.2
-WALL_AVOIDANCE_DISTANCE = 0.4
+WALL_AVOIDANCE_DISTANCE = 0.7
+CLUSTER_DISTANCE = 0.85
+SENSING_RANGE = 3.0
 
 class Workspace:
     def __init__(self, no_of_bots):
         #Danger Zone square
-        self.sqr_1_x_min = -10
+        self.sqr_1_x_min = -7
         self.sqr_1_x_max = -0.5
-        self.sqr_1_y_min = -2.5
-        self.sqr_1_y_max = 5.5
+        self.sqr_1_y_min = -3
+        self.sqr_1_y_max = 3
         
         #Safe Zone square
         self.sqr_2_x_min = 1.5
@@ -259,7 +261,7 @@ class Robot:
         self.neigh = 0
         self.robot = []          
         self.goal = [-3, 2] #Initial goal
-        self.goal_set = True #Set this to true if you want the agent(s) to go to initial self.goal
+        self.goal_set = False #Set this to true if you want the agent(s) to go to initial self.goal
         self.namespace = rospy.get_namespace()
         scan_topic = self.namespace + "scan"
         self.speed = Twist()
@@ -303,7 +305,7 @@ class Robot:
         self.ang_max = msg.angle_max
         self.ang_inc = msg.angle_increment
         self.process_scanner_data(msg)
-        rospy.loginfo(f"Minimum distance to object: {min_distance} meters")
+        # rospy.loginfo(f"Minimum distance to object: {min_distance} meters")
     
     def distance(self, point1, point2):
     # Convert numbers to single-element tuples
@@ -396,7 +398,8 @@ class Robot:
 
     def process_scanner_data(self,msg):
         # Threshold limit to consider as an obstacle (in meters)
-        R_max = LATTICE_LENGTH+WALL_AVOIDANCE_DISTANCE/2 - OBSTACLE_RADIUS
+        # R_max = LATTICE_LENGTH+WALL_AVOIDANCE_DISTANCE/2 - OBSTACLE_RADIUS
+        R_max = SENSING_RANGE
         obs_size_limit = OBSTACLE_RADIUS
         distances = []
         angles = []
@@ -430,15 +433,15 @@ class Robot:
                     obstacle_x = self.odom.x + rounded_distances[enum]*cos(radians(angles[enum]) + self.yaw)
                     obstacle_y = self.odom.y + rounded_distances[enum]*sin(radians(angles[enum]) + self.yaw)
                     obstacle_coordinate = (round(obstacle_x,3), round(obstacle_y,3)) 
-                    if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.1):
+                    if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.agents_location, 0.3):
                         self.near_obstacle = True
-                        if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.obstacle_coordinates, 0.3): 
+                        if not self.is_within_tolerance(obstacle_coordinate, self.robot_workspace.obstacle_coordinates, 0.2): 
                                 ##A new obstacle observed
                                 # print(obstacle_coordinate)
                                 # print(self.robot_workspace.agents_location)
                                 self.observed_lattice_obj.process_new_data_point(obstacle_coordinate)
                                 self.robot_workspace.update_obstacle_data(obstacle_coordinate, obs_size_limit)
-                                default_lattice_radius = self.observed_lattice_obj.lattice_length/sqrt(3)
+                                default_lattice_radius = self.observed_lattice_obj.lattice_length/sqrt(3) + obs_size_limit + WALL_AVOIDANCE_DISTANCE
                                 self.robot_workspace.update_lattice_data(self.observed_lattice_obj.lattice_centroid, default_lattice_radius)
                                 if all(coord is not None for coord in self.goal):
                                     if self.robot_workspace.validity_of_goal(self.goal):
@@ -511,28 +514,28 @@ class Robot:
         closest_distance = float('inf')
         for centroid,radius in self.robot_workspace.lattice_data:
             distance = dist(centroid, robot_position)
-            print(f"{centroid} for robot {self.namespace} at location {robot_position}, distance between them being {distance}")
+            # print(f"{centroid} for robot {self.namespace} at location {robot_position}, distance between them being {distance}")
             if distance < closest_distance:
 
                 closest_distance = distance
         
         if (closest_distance > avoidance_radius):
             if min(self.range[0:deg]) <= WALL_AVOIDANCE_DISTANCE or min(self.range[(360-deg):]) <= WALL_AVOIDANCE_DISTANCE: # front wall
-                print(f"Front wall motion")
+                # print(f"Front wall motion")
                 self.speed.angular.z = -0.2
                 self.speed.linear.x = 0.0
-                print("Front wall observed by", self.namespace)
+                # print("Front wall observed by", self.namespace)
             elif min(self.range[deg:89]) <= WALL_AVOIDANCE_DISTANCE: # left wall
-                print(f"Left wall motion") 
+                # print(f"Left wall motion") 
                 self.speed.angular.z = 0.0
                 self.speed.linear.x = 0.2
                 # print(self.range)
-                print("Left wall observed by", self.namespace)
+                # print("Left wall observed by", self.namespace)
             # elif min(self.range[(359-120):(359-deg)]) < dst: # right wall
             #     self.speed.angular.z = 0.0
             #     self.speed.linear.x = -0.2
             else:
-                print("Nothing observed by", self.namespace)
+                # print("Nothing observed by", self.namespace)
                 self.speed.linear.x = 0.18
                 self.speed.angular.z = K*np.sign(self.dtheta)
                 
@@ -555,6 +558,7 @@ class Robot:
         If obstacle -> wall following"""
         self.goal_start_time = self.current_time
         self.goal = self.robot_workspace.generate_goal(goal_coordinates)
+        print(f"for robot {self.namespace} goal is {self.goal}")
         self.goal_set = True
 
         
@@ -574,17 +578,12 @@ class Robot:
             # print(self.goal)
             # print("\n")
         robot_position = [self.odom.x, self.odom.y]
-        cluster_formation_avoidance_distance = 3 #3meters
-        near_lattice = False
-        print(f"for robot {self.namespace} goal is {self.goal}")
-        for lattice_centroid, radii in self.robot_workspace.lattice_data:
-            if dist(lattice_centroid, robot_position) < cluster_formation_avoidance_distance:
-                near_lattice = True
-        if (all(coord is not None for coord in self.goal) or len(self.neighbour_array)<MINIMUM_NEIGHBOURS) or near_lattice:
-            if near_lattice or not self.goal_set:
-                if not self.goal_set:
-                    self.set_goal()
-            elif len(self.neighbour_array)>0:
+        # cluster_formation_avoidance_distance = 3 #3meters
+        # for lattice_centroid, radii in self.robot_workspace.lattice_data:
+        #     if dist(lattice_centroid, robot_position) < cluster_formation_avoidance_distance:
+        #         near_lattice = True
+        if (all(coord is not None for coord in self.goal) or len(self.neighbour_array)<MINIMUM_NEIGHBOURS):                
+            if len(self.neighbour_array)>0:
                 # print(f"{len(self.neighbour_array)} are the number of neighbours")
                 x = self.x
                 y = self.y
@@ -599,7 +598,9 @@ class Robot:
                 # print("Neighbour array:", self.neighbour_array)
                 # print("Cluster goal set:", self.goal, "\n")
                 # self.goal_set = True
-                
+            else:
+                if not self.goal_set:
+                    self.set_goal()
 
             self.incx = (self.goal[X] - self.x)
             self.incy = (self.goal[Y] - self.y)
@@ -613,11 +614,10 @@ class Robot:
             self.dtheta = (self.current_bearing - self.previous_bearing)/h
             self.previous_bearing = self.current_bearing
             
-            if (self.dis_err) <= 0.70:
+            if (self.dis_err) <= CLUSTER_DISTANCE/2:
                 self.goal_set = False
                 if len(self.neighbour_array)>=MINIMUM_NEIGHBOURS:
                     self.goal = [None, None]
-                    print("WTF is this happening")
                 else:
                     self.set_goal()
             if all(coord is not None for coord in self.goal):
@@ -665,7 +665,7 @@ if __name__ == '__main__':
     k = 0
     l = [] #l is time
     rate = rospy.Rate(4)
-    bot = Robot(1)  
+    bot = Robot(4)  
     rospy.sleep(6)
     # bot.set_goal()
     while not rospy.is_shutdown() and k < 500000:
